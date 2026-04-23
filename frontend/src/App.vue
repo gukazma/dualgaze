@@ -5,6 +5,14 @@ import { createViewer, loadTileset } from './cesium/viewer';
 import { extractCoarseHull } from './planner/hull';
 import type { HullBox } from './planner/types';
 import { buildDsm, type Dsm } from './planner/dsm';
+import { generateViewpoints } from './planner/viewpoints';
+import {
+  buildSafetyShell,
+  poissonDiskSample2D,
+  type SafetyShell,
+  type SamplePoint,
+} from './planner/safetyShell';
+import type { Waypoint } from './planner/types';
 
 type Status = 'idle' | 'loading' | 'loaded' | 'error';
 
@@ -24,6 +32,19 @@ const dsmResolution = ref(2);
 const dsmStats = ref<{ count: number; minH: number; maxH: number } | null>(null);
 const dsmBuilding = ref(false);
 const dsmProgress = ref<{ done: number; total: number } | null>(null);
+
+const safetyDistance = ref(20);
+const viewpointCount = ref<number | null>(null);
+const viewpoints = ref<Waypoint[]>([]);
+const viewpointPoints = ref<Cesium.PointPrimitiveCollection | null>(null);
+const viewpointLines = ref<Cesium.Primitive | null>(null);
+
+const shell = ref<SafetyShell | null>(null);
+const shellMeshPrim = ref<Cesium.Primitive | null>(null);
+const minDist = ref(10);
+const samples = ref<SamplePoint[]>([]);
+const sampleCount = ref<number | null>(null);
+const shellSamples = ref<Cesium.PointPrimitiveCollection | null>(null);
 const dsm = ref<Dsm | null>(null);
 const dsmMeshPrim = ref<Cesium.Primitive | null>(null);
 
@@ -44,6 +65,27 @@ async function onLoadClick() {
   }
   dsm.value = null;
   dsmStats.value = null;
+  if (viewpointPoints.value) {
+    viewer.value.scene.primitives.remove(viewpointPoints.value);
+    viewpointPoints.value = null;
+  }
+  if (viewpointLines.value) {
+    viewer.value.scene.primitives.remove(viewpointLines.value);
+    viewpointLines.value = null;
+  }
+  viewpoints.value = [];
+  viewpointCount.value = null;
+  if (shellMeshPrim.value) {
+    viewer.value.scene.primitives.remove(shellMeshPrim.value);
+    shellMeshPrim.value = null;
+  }
+  shell.value = null;
+  if (shellSamples.value) {
+    viewer.value.scene.primitives.remove(shellSamples.value);
+    shellSamples.value = null;
+  }
+  samples.value = [];
+  sampleCount.value = null;
   if (tileset.value) {
     viewer.value.scene.primitives.remove(tileset.value);
     tileset.value = null;
@@ -134,6 +176,227 @@ async function onBuildDsmClick() {
     dsmBuilding.value = false;
     dsmProgress.value = null;
   }
+}
+
+function onGenerateViewpointsClick() {
+  if (!dsm.value || samples.value.length === 0) return;
+  const vps = generateViewpoints(samples.value, dsm.value);
+  viewpoints.value = vps;
+  viewpointCount.value = vps.length;
+  if (vps.length > 0) {
+    let pitchSum = 0;
+    let pitchMin = Infinity;
+    let pitchMax = -Infinity;
+    for (const v of vps) {
+      pitchSum += v.pitch;
+      if (v.pitch < pitchMin) pitchMin = v.pitch;
+      if (v.pitch > pitchMax) pitchMax = v.pitch;
+    }
+    const toDeg = (rad: number) => (rad * 180) / Math.PI;
+    console.log(
+      `[DualGaze] 生成 ${vps.length} 个视点（来自泊松采样，min_dist=${minDist.value}m），` +
+        `pitch ${toDeg(pitchMin).toFixed(1)}°~${toDeg(pitchMax).toFixed(1)}°，` +
+        `平均 ${toDeg(pitchSum / vps.length).toFixed(1)}°`,
+      vps.slice(0, 5),
+    );
+  }
+  drawViewpoints(vps);
+}
+
+function onPoissonSampleClick() {
+  if (!shell.value) return;
+  const pts = poissonDiskSample2D(shell.value, minDist.value);
+  samples.value = pts;
+  sampleCount.value = pts.length;
+  console.log(
+    `[DualGaze] 泊松采样完成，${pts.length} 个点，min_dist=${minDist.value}m`,
+  );
+  drawShellSamples(pts);
+}
+
+function drawShellSamples(pts: SamplePoint[]) {
+  if (!viewer.value) return;
+  if (shellSamples.value) {
+    viewer.value.scene.primitives.remove(shellSamples.value);
+    shellSamples.value = null;
+  }
+  if (pts.length === 0) return;
+  const coll = new Cesium.PointPrimitiveCollection();
+  const green = Cesium.Color.LIME;
+  for (const p of pts) {
+    coll.add({ position: p.positionEcef, color: green, pixelSize: 10 });
+  }
+  shellSamples.value = viewer.value.scene.primitives.add(coll);
+}
+
+function onBuildShellClick() {
+  if (!dsm.value) return;
+  const s = buildSafetyShell(dsm.value, safetyDistance.value);
+  shell.value = s;
+  let validCount = 0;
+  for (const p of s.positions) if (Number.isFinite(p.x)) validCount++;
+  console.log(
+    `[DualGaze] 安全罩构建完成，${validCount} / ${s.positions.length} 个有效点，外扩 ${safetyDistance.value}m`,
+  );
+  drawSafetyShell(s);
+}
+
+function drawSafetyShell(s: SafetyShell) {
+  if (!viewer.value) return;
+  if (shellMeshPrim.value) {
+    viewer.value.scene.primitives.remove(shellMeshPrim.value);
+    shellMeshPrim.value = null;
+  }
+  if (s.positions.length === 0) return;
+
+  const positions: number[] = [];
+  const vertIdx = new Map<number, number>();
+  const indices: number[] = [];
+  const getOrCreateIdx = (k: number): number => {
+    const existing = vertIdx.get(k);
+    if (existing !== undefined) return existing;
+    const pos = s.positions[k];
+    const idx = positions.length / 3;
+    positions.push(pos.x, pos.y, pos.z);
+    vertIdx.set(k, idx);
+    return idx;
+  };
+
+  for (let j = 0; j < s.height - 1; j++) {
+    for (let i = 0; i < s.width - 1; i++) {
+      const k00 = j * s.width + i;
+      const k10 = j * s.width + i + 1;
+      const k01 = (j + 1) * s.width + i;
+      const k11 = (j + 1) * s.width + i + 1;
+      if (
+        !Number.isFinite(s.positions[k00].x) ||
+        !Number.isFinite(s.positions[k10].x) ||
+        !Number.isFinite(s.positions[k01].x) ||
+        !Number.isFinite(s.positions[k11].x)
+      ) continue;
+      const i00 = getOrCreateIdx(k00);
+      const i10 = getOrCreateIdx(k10);
+      const i01 = getOrCreateIdx(k01);
+      const i11 = getOrCreateIdx(k11);
+      indices.push(i00, i10, i11, i00, i11, i01);
+    }
+  }
+  if (indices.length === 0) return;
+
+  const positionsArr = new Float64Array(positions);
+  const geom = new Cesium.Geometry({
+    attributes: {
+      position: new Cesium.GeometryAttribute({
+        componentDatatype: Cesium.ComponentDatatype.DOUBLE,
+        componentsPerAttribute: 3,
+        values: positionsArr,
+      }),
+    } as unknown as Cesium.GeometryAttributes,
+    indices: new Uint32Array(indices),
+    primitiveType: Cesium.PrimitiveType.TRIANGLES,
+    boundingSphere: Cesium.BoundingSphere.fromVertices(Array.from(positionsArr)),
+  });
+  const instance = new Cesium.GeometryInstance({
+    geometry: geom,
+    attributes: {
+      color: Cesium.ColorGeometryInstanceAttribute.fromColor(
+        Cesium.Color.BLUE.withAlpha(0.3),
+      ),
+    },
+  });
+  shellMeshPrim.value = viewer.value.scene.primitives.add(
+    new Cesium.Primitive({
+      geometryInstances: [instance],
+      appearance: new Cesium.PerInstanceColorAppearance({
+        flat: true,
+        translucent: true,
+        closed: false,
+      }),
+      asynchronous: false,
+    }),
+  );
+}
+
+function drawViewpoints(vps: Waypoint[]) {
+  if (!viewer.value) return;
+  if (viewpointPoints.value) {
+    viewer.value.scene.primitives.remove(viewpointPoints.value);
+    viewpointPoints.value = null;
+  }
+  if (viewpointLines.value) {
+    viewer.value.scene.primitives.remove(viewpointLines.value);
+    viewpointLines.value = null;
+  }
+  if (vps.length === 0) return;
+
+  const points = new Cesium.PointPrimitiveCollection();
+  const lineInstances: Cesium.GeometryInstance[] = [];
+  const lineLength = 2;
+  const magenta = Cesium.Color.MAGENTA;
+
+  for (const v of vps) {
+    points.add({ position: v.position, color: magenta, pixelSize: 4 });
+
+    const cosP = Math.cos(v.pitch);
+    const dEast = Math.sin(v.heading) * cosP;
+    const dNorth = Math.cos(v.heading) * cosP;
+    const dUp = Math.sin(v.pitch);
+
+    const enuToEcef = Cesium.Transforms.eastNorthUpToFixedFrame(v.position);
+    const c0 = Cesium.Matrix4.getColumn(enuToEcef, 0, new Cesium.Cartesian4());
+    const c1 = Cesium.Matrix4.getColumn(enuToEcef, 1, new Cesium.Cartesian4());
+    const c2 = Cesium.Matrix4.getColumn(enuToEcef, 2, new Cesium.Cartesian4());
+    const east = Cesium.Cartesian3.normalize(
+      new Cesium.Cartesian3(c0.x, c0.y, c0.z),
+      new Cesium.Cartesian3(),
+    );
+    const north = Cesium.Cartesian3.normalize(
+      new Cesium.Cartesian3(c1.x, c1.y, c1.z),
+      new Cesium.Cartesian3(),
+    );
+    const up = Cesium.Cartesian3.normalize(
+      new Cesium.Cartesian3(c2.x, c2.y, c2.z),
+      new Cesium.Cartesian3(),
+    );
+    const dirEcef = new Cesium.Cartesian3();
+    Cesium.Cartesian3.add(
+      Cesium.Cartesian3.multiplyByScalar(east, dEast, new Cesium.Cartesian3()),
+      Cesium.Cartesian3.multiplyByScalar(north, dNorth, new Cesium.Cartesian3()),
+      dirEcef,
+    );
+    Cesium.Cartesian3.add(
+      dirEcef,
+      Cesium.Cartesian3.multiplyByScalar(up, dUp, new Cesium.Cartesian3()),
+      dirEcef,
+    );
+
+    const end = Cesium.Cartesian3.add(
+      v.position,
+      Cesium.Cartesian3.multiplyByScalar(dirEcef, lineLength, new Cesium.Cartesian3()),
+      new Cesium.Cartesian3(),
+    );
+
+    lineInstances.push(
+      new Cesium.GeometryInstance({
+        geometry: new Cesium.PolylineGeometry({
+          positions: [v.position, end],
+          width: 1,
+        }),
+        attributes: {
+          color: Cesium.ColorGeometryInstanceAttribute.fromColor(magenta),
+        },
+      }),
+    );
+  }
+
+  viewpointPoints.value = viewer.value.scene.primitives.add(points);
+  viewpointLines.value = viewer.value.scene.primitives.add(
+    new Cesium.Primitive({
+      geometryInstances: lineInstances,
+      appearance: new Cesium.PolylineColorAppearance({ translucent: false }),
+      asynchronous: false,
+    }),
+  );
 }
 
 function drawDsmMesh(d: Dsm) {
@@ -321,6 +584,56 @@ function drawHull(boxes: HullBox[]) {
         <div v-if="dsmStats" class="caption">
           DSM {{ dsmStats.count }} 点 · 高度
           {{ dsmStats.minH.toFixed(1) }}~{{ dsmStats.maxH.toFixed(1) }}m
+        </div>
+
+        <label class="field-label hull-label" for="safety-dist">安全罩外扩 (m)</label>
+        <input
+          id="safety-dist"
+          type="number"
+          min="5"
+          max="100"
+          step="1"
+          v-model.number="safetyDistance"
+          class="text-input"
+        />
+        <button
+          class="ghost-btn"
+          :disabled="!dsm"
+          @click="onBuildShellClick"
+        >
+          构建安全罩
+        </button>
+
+        <label class="field-label hull-label" for="min-dist">采样间距 (m)</label>
+        <input
+          id="min-dist"
+          type="number"
+          min="2"
+          max="50"
+          step="1"
+          v-model.number="minDist"
+          class="text-input"
+        />
+        <button
+          class="ghost-btn"
+          :disabled="!shell"
+          @click="onPoissonSampleClick"
+        >
+          泊松采样
+        </button>
+        <div v-if="sampleCount !== null" class="caption">
+          已采样 {{ sampleCount }} 个点
+        </div>
+
+        <button
+          class="ghost-btn"
+          :disabled="!samples.length || !dsm"
+          @click="onGenerateViewpointsClick"
+        >
+          生成视点
+        </button>
+        <div v-if="viewpointCount !== null" class="caption">
+          已生成 {{ viewpointCount }} 个视点
         </div>
 
       </div>
