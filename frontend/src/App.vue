@@ -12,6 +12,10 @@ import {
   type ProxyMesh,
   type ShellSample,
 } from './planner/proxyMesh';
+import {
+  filterByInterestMask,
+  type FilterStats,
+} from './planner/viewpointFilter';
 import type { Waypoint } from './planner/types';
 
 type Status = 'idle' | 'loading' | 'loaded' | 'error';
@@ -56,6 +60,9 @@ const surfaceSamples = ref<ShellSample[]>([]);
 const surfaceSamplesPrim = ref<Cesium.PointPrimitiveCollection | null>(null);
 const surfaceSamplesStats = ref<{ total: number; top: number; wall: number } | null>(null);
 
+const groundThreshold = ref(3);
+const filterStats = ref<FilterStats | null>(null);
+
 onMounted(() => {
   if (viewerEl.value) viewer.value = createViewer(viewerEl.value);
 });
@@ -91,6 +98,7 @@ async function onLoadClick() {
   }
   surfaceSamples.value = [];
   surfaceSamplesStats.value = null;
+  filterStats.value = null;
   if (tileset.value) {
     viewer.value.scene.primitives.remove(tileset.value);
     tileset.value = null;
@@ -283,18 +291,28 @@ function drawSurfaceSamples(pts: ShellSample[]) {
 }
 
 function onGenerateViewpointsClick() {
-  if (surfaceSamples.value.length === 0) return;
-  const vps = generateViewpoints(surfaceSamples.value, safetyDistance.value);
+  if (surfaceSamples.value.length === 0 || !dsm.value) return;
+  const { kept, stats } = filterByInterestMask(
+    surfaceSamples.value,
+    dsm.value,
+    { groundThreshold: groundThreshold.value },
+  );
+  filterStats.value = stats;
+  const vps = generateViewpoints(kept, safetyDistance.value);
   viewpoints.value = vps;
   viewpointCount.value = vps.length;
+  console.log(
+    `[DualGaze] interest mask 过滤：${stats.total} → ${stats.kept}（丢 ${stats.droppedTop} 地面点），` +
+      `保留墙面 ${stats.keptWall} + 顶面 ${stats.keptTop}，groundThreshold=${groundThreshold.value}m`,
+  );
   if (vps.length > 0) {
     const toDeg = (rad: number) => (rad * 180) / Math.PI;
     let pitchMin = Infinity;
     let pitchMax = -Infinity;
     let pitchSum = 0;
-    let bucketDown = 0; // [-90° .. -60°]
-    let bucketOblique = 0; // (-60° .. -30°]
-    let bucketHoriz = 0; // (-30° .. 0°]
+    let bucketDown = 0;
+    let bucketOblique = 0;
+    let bucketHoriz = 0;
     let bucketOther = 0;
     for (const v of vps) {
       pitchSum += v.pitch;
@@ -567,6 +585,16 @@ function drawHull(boxes: HullBox[]) {
           墙 {{ surfaceSamplesStats.wall }}）
         </div>
 
+        <label class="field-label hull-label" for="ground-thresh">地面阈值 (m)</label>
+        <input
+          id="ground-thresh"
+          type="number"
+          min="0"
+          max="20"
+          step="0.5"
+          v-model.number="groundThreshold"
+          class="text-input"
+        />
         <button
           class="ghost-btn"
           :disabled="!surfaceSamples.length"
@@ -574,6 +602,10 @@ function drawHull(boxes: HullBox[]) {
         >
           生成视点
         </button>
+        <div v-if="filterStats" class="caption">
+          过滤 {{ filterStats.total }} → {{ filterStats.kept }}（丢 {{ filterStats.droppedTop }} 地面，
+          墙 {{ filterStats.keptWall }} + 顶 {{ filterStats.keptTop }}）
+        </div>
         <div v-if="viewpointCount !== null" class="caption">
           已生成 {{ viewpointCount }} 个视点
         </div>
