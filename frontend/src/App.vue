@@ -7,11 +7,11 @@ import type { HullBox } from './planner/types';
 import { buildDsm, type Dsm } from './planner/dsm';
 import { generateViewpoints } from './planner/viewpoints';
 import {
-  buildSafetyShell,
-  poissonDiskSample2D,
-  type SafetyShell,
-  type SamplePoint,
-} from './planner/safetyShell';
+  buildProxyMesh,
+  sampleSurfaceUniform,
+  type ProxyMesh,
+  type ShellSample,
+} from './planner/proxyMesh';
 import type { Waypoint } from './planner/types';
 
 type Status = 'idle' | 'loading' | 'loaded' | 'error';
@@ -39,14 +39,22 @@ const viewpoints = ref<Waypoint[]>([]);
 const viewpointPoints = ref<Cesium.PointPrimitiveCollection | null>(null);
 const viewpointLines = ref<Cesium.Primitive | null>(null);
 
-const shell = ref<SafetyShell | null>(null);
-const shellMeshPrim = ref<Cesium.Primitive | null>(null);
-const minDist = ref(10);
-const samples = ref<SamplePoint[]>([]);
-const sampleCount = ref<number | null>(null);
-const shellSamples = ref<Cesium.PointPrimitiveCollection | null>(null);
 const dsm = ref<Dsm | null>(null);
-const dsmMeshPrim = ref<Cesium.Primitive | null>(null);
+
+const wallThreshold = ref(6);
+const proxyMesh = ref<ProxyMesh | null>(null);
+const proxyMeshPrim = ref<Cesium.Primitive | null>(null);
+const proxyMeshStats = ref<{
+  totalFaces: number;
+  topFaces: number;
+  wallFaces: number;
+  totalArea: number;
+} | null>(null);
+
+const sampleN = ref(500);
+const surfaceSamples = ref<ShellSample[]>([]);
+const surfaceSamplesPrim = ref<Cesium.PointPrimitiveCollection | null>(null);
+const surfaceSamplesStats = ref<{ total: number; top: number; wall: number } | null>(null);
 
 onMounted(() => {
   if (viewerEl.value) viewer.value = createViewer(viewerEl.value);
@@ -59,10 +67,6 @@ async function onLoadClick() {
     hullPrimitive.value = null;
   }
   hullCount.value = null;
-  if (dsmMeshPrim.value) {
-    viewer.value.scene.primitives.remove(dsmMeshPrim.value);
-    dsmMeshPrim.value = null;
-  }
   dsm.value = null;
   dsmStats.value = null;
   if (viewpointPoints.value) {
@@ -75,17 +79,18 @@ async function onLoadClick() {
   }
   viewpoints.value = [];
   viewpointCount.value = null;
-  if (shellMeshPrim.value) {
-    viewer.value.scene.primitives.remove(shellMeshPrim.value);
-    shellMeshPrim.value = null;
+  if (proxyMeshPrim.value) {
+    viewer.value.scene.primitives.remove(proxyMeshPrim.value);
+    proxyMeshPrim.value = null;
   }
-  shell.value = null;
-  if (shellSamples.value) {
-    viewer.value.scene.primitives.remove(shellSamples.value);
-    shellSamples.value = null;
+  proxyMesh.value = null;
+  proxyMeshStats.value = null;
+  if (surfaceSamplesPrim.value) {
+    viewer.value.scene.primitives.remove(surfaceSamplesPrim.value);
+    surfaceSamplesPrim.value = null;
   }
-  samples.value = [];
-  sampleCount.value = null;
+  surfaceSamples.value = [];
+  surfaceSamplesStats.value = null;
   if (tileset.value) {
     viewer.value.scene.primitives.remove(tileset.value);
     tileset.value = null;
@@ -169,7 +174,6 @@ async function onBuildDsmClick() {
         `平均法线 z=${avgNz.toFixed(3)}，最大倾角 ${maxTiltDeg.toFixed(1)}°`,
       d,
     );
-    drawDsmMesh(d);
   } catch (e: any) {
     console.error('[DualGaze] DSM 构建失败', e);
   } finally {
@@ -178,133 +182,61 @@ async function onBuildDsmClick() {
   }
 }
 
-function onGenerateViewpointsClick() {
-  if (!dsm.value || samples.value.length === 0) return;
-  const vps = generateViewpoints(samples.value, dsm.value);
-  viewpoints.value = vps;
-  viewpointCount.value = vps.length;
-  if (vps.length > 0) {
-    let pitchSum = 0;
-    let pitchMin = Infinity;
-    let pitchMax = -Infinity;
-    for (const v of vps) {
-      pitchSum += v.pitch;
-      if (v.pitch < pitchMin) pitchMin = v.pitch;
-      if (v.pitch > pitchMax) pitchMax = v.pitch;
-    }
-    const toDeg = (rad: number) => (rad * 180) / Math.PI;
-    console.log(
-      `[DualGaze] 生成 ${vps.length} 个视点（来自泊松采样，min_dist=${minDist.value}m），` +
-        `pitch ${toDeg(pitchMin).toFixed(1)}°~${toDeg(pitchMax).toFixed(1)}°，` +
-        `平均 ${toDeg(pitchSum / vps.length).toFixed(1)}°`,
-      vps.slice(0, 5),
-    );
-  }
-  drawViewpoints(vps);
-}
-
-function onPoissonSampleClick() {
-  if (!shell.value) return;
-  const pts = poissonDiskSample2D(shell.value, minDist.value);
-  samples.value = pts;
-  sampleCount.value = pts.length;
-  console.log(
-    `[DualGaze] 泊松采样完成，${pts.length} 个点，min_dist=${minDist.value}m`,
-  );
-  drawShellSamples(pts);
-}
-
-function drawShellSamples(pts: SamplePoint[]) {
-  if (!viewer.value) return;
-  if (shellSamples.value) {
-    viewer.value.scene.primitives.remove(shellSamples.value);
-    shellSamples.value = null;
-  }
-  if (pts.length === 0) return;
-  const coll = new Cesium.PointPrimitiveCollection();
-  const green = Cesium.Color.LIME;
-  for (const p of pts) {
-    coll.add({ position: p.positionEcef, color: green, pixelSize: 10 });
-  }
-  shellSamples.value = viewer.value.scene.primitives.add(coll);
-}
-
-function onBuildShellClick() {
+function onBuildProxyMeshClick() {
   if (!dsm.value) return;
-  const s = buildSafetyShell(dsm.value, safetyDistance.value);
-  shell.value = s;
-  let validCount = 0;
-  for (const p of s.positions) if (Number.isFinite(p.x)) validCount++;
+  const mesh = buildProxyMesh(dsm.value, { wallThreshold: wallThreshold.value });
+  proxyMesh.value = mesh;
+  const totalFaces = mesh.faceAreas.length;
+  proxyMeshStats.value = {
+    totalFaces,
+    topFaces: mesh.topFaceCount,
+    wallFaces: mesh.wallFaceCount,
+    totalArea: mesh.totalArea,
+  };
   console.log(
-    `[DualGaze] 安全罩构建完成，${validCount} / ${s.positions.length} 个有效点，外扩 ${safetyDistance.value}m`,
+    `[DualGaze] ProxyMesh 构建完成：顶面 ${mesh.topFaceCount} 三角 + 墙面 ${mesh.wallFaceCount} 三角（共 ${totalFaces}），` +
+      `wallThreshold=${wallThreshold.value}m，总面积 ${mesh.totalArea.toFixed(0)} m²`,
+    mesh,
   );
-  drawSafetyShell(s);
+  drawProxyMesh(mesh);
 }
 
-function drawSafetyShell(s: SafetyShell) {
+function drawProxyMesh(mesh: ProxyMesh) {
   if (!viewer.value) return;
-  if (shellMeshPrim.value) {
-    viewer.value.scene.primitives.remove(shellMeshPrim.value);
-    shellMeshPrim.value = null;
+  if (proxyMeshPrim.value) {
+    viewer.value.scene.primitives.remove(proxyMeshPrim.value);
+    proxyMeshPrim.value = null;
   }
-  if (s.positions.length === 0) return;
+  if (mesh.triangles.length === 0) return;
 
-  const positions: number[] = [];
-  const vertIdx = new Map<number, number>();
-  const indices: number[] = [];
-  const getOrCreateIdx = (k: number): number => {
-    const existing = vertIdx.get(k);
-    if (existing !== undefined) return existing;
-    const pos = s.positions[k];
-    const idx = positions.length / 3;
-    positions.push(pos.x, pos.y, pos.z);
-    vertIdx.set(k, idx);
-    return idx;
-  };
-
-  for (let j = 0; j < s.height - 1; j++) {
-    for (let i = 0; i < s.width - 1; i++) {
-      const k00 = j * s.width + i;
-      const k10 = j * s.width + i + 1;
-      const k01 = (j + 1) * s.width + i;
-      const k11 = (j + 1) * s.width + i + 1;
-      if (
-        !Number.isFinite(s.positions[k00].x) ||
-        !Number.isFinite(s.positions[k10].x) ||
-        !Number.isFinite(s.positions[k01].x) ||
-        !Number.isFinite(s.positions[k11].x)
-      ) continue;
-      const i00 = getOrCreateIdx(k00);
-      const i10 = getOrCreateIdx(k10);
-      const i01 = getOrCreateIdx(k01);
-      const i11 = getOrCreateIdx(k11);
-      indices.push(i00, i10, i11, i00, i11, i01);
-    }
+  const positions = new Float64Array(mesh.vertices.length * 3);
+  for (let k = 0; k < mesh.vertices.length; k++) {
+    const v = mesh.vertices[k];
+    positions[3 * k] = v.x;
+    positions[3 * k + 1] = v.y;
+    positions[3 * k + 2] = v.z;
   }
-  if (indices.length === 0) return;
-
-  const positionsArr = new Float64Array(positions);
   const geom = new Cesium.Geometry({
     attributes: {
       position: new Cesium.GeometryAttribute({
         componentDatatype: Cesium.ComponentDatatype.DOUBLE,
         componentsPerAttribute: 3,
-        values: positionsArr,
+        values: positions,
       }),
     } as unknown as Cesium.GeometryAttributes,
-    indices: new Uint32Array(indices),
+    indices: new Uint32Array(mesh.triangles),
     primitiveType: Cesium.PrimitiveType.TRIANGLES,
-    boundingSphere: Cesium.BoundingSphere.fromVertices(Array.from(positionsArr)),
+    boundingSphere: Cesium.BoundingSphere.fromVertices(Array.from(positions)),
   });
   const instance = new Cesium.GeometryInstance({
     geometry: geom,
     attributes: {
       color: Cesium.ColorGeometryInstanceAttribute.fromColor(
-        Cesium.Color.BLUE.withAlpha(0.3),
+        Cesium.Color.CYAN.withAlpha(0.4),
       ),
     },
   });
-  shellMeshPrim.value = viewer.value.scene.primitives.add(
+  proxyMeshPrim.value = viewer.value.scene.primitives.add(
     new Cesium.Primitive({
       geometryInstances: [instance],
       appearance: new Cesium.PerInstanceColorAppearance({
@@ -315,6 +247,78 @@ function drawSafetyShell(s: SafetyShell) {
       asynchronous: false,
     }),
   );
+}
+
+function onSurfaceSampleClick() {
+  if (!proxyMesh.value) return;
+  const pts = sampleSurfaceUniform(proxyMesh.value, sampleN.value);
+  surfaceSamples.value = pts;
+  let top = 0;
+  let wall = 0;
+  for (const p of pts) {
+    if (p.isWall) wall++;
+    else top++;
+  }
+  surfaceSamplesStats.value = { total: pts.length, top, wall };
+  console.log(
+    `[DualGaze] 表面采样完成：${pts.length} 个点（顶面 ${top} + 墙面 ${wall}），` +
+      `总面积 ${proxyMesh.value.totalArea.toFixed(0)} m²`,
+  );
+  drawSurfaceSamples(pts);
+}
+
+function drawSurfaceSamples(pts: ShellSample[]) {
+  if (!viewer.value) return;
+  if (surfaceSamplesPrim.value) {
+    viewer.value.scene.primitives.remove(surfaceSamplesPrim.value);
+    surfaceSamplesPrim.value = null;
+  }
+  if (pts.length === 0) return;
+  const coll = new Cesium.PointPrimitiveCollection();
+  const blue = Cesium.Color.DODGERBLUE;
+  for (const p of pts) {
+    coll.add({ position: p.positionEcef, color: blue, pixelSize: 10 });
+  }
+  surfaceSamplesPrim.value = viewer.value.scene.primitives.add(coll);
+}
+
+function onGenerateViewpointsClick() {
+  if (surfaceSamples.value.length === 0) return;
+  const vps = generateViewpoints(surfaceSamples.value, safetyDistance.value);
+  viewpoints.value = vps;
+  viewpointCount.value = vps.length;
+  if (vps.length > 0) {
+    const toDeg = (rad: number) => (rad * 180) / Math.PI;
+    let pitchMin = Infinity;
+    let pitchMax = -Infinity;
+    let pitchSum = 0;
+    let bucketDown = 0; // [-90° .. -60°]
+    let bucketOblique = 0; // (-60° .. -30°]
+    let bucketHoriz = 0; // (-30° .. 0°]
+    let bucketOther = 0;
+    for (const v of vps) {
+      pitchSum += v.pitch;
+      if (v.pitch < pitchMin) pitchMin = v.pitch;
+      if (v.pitch > pitchMax) pitchMax = v.pitch;
+      const deg = toDeg(v.pitch);
+      if (deg <= -60) bucketDown++;
+      else if (deg <= -30) bucketOblique++;
+      else if (deg <= 0) bucketHoriz++;
+      else bucketOther++;
+    }
+    const pct = (n: number) => ((n / vps.length) * 100).toFixed(1);
+    console.log(
+      `[DualGaze] 生成 ${vps.length} 个视点（safety=${safetyDistance.value}m），` +
+        `pitch ${toDeg(pitchMin).toFixed(1)}°~${toDeg(pitchMax).toFixed(1)}°，` +
+        `平均 ${toDeg(pitchSum / vps.length).toFixed(1)}°；` +
+        `直方图：俯视 [-90°~-60°] ${bucketDown}(${pct(bucketDown)}%) / ` +
+        `斜视 (-60°~-30°] ${bucketOblique}(${pct(bucketOblique)}%) / ` +
+        `水平 (-30°~0°] ${bucketHoriz}(${pct(bucketHoriz)}%)` +
+        (bucketOther > 0 ? ` / 其他 ${bucketOther}(${pct(bucketOther)}%)` : ''),
+      vps.slice(0, 5),
+    );
+  }
+  drawViewpoints(vps);
 }
 
 function drawViewpoints(vps: Waypoint[]) {
@@ -394,84 +398,6 @@ function drawViewpoints(vps: Waypoint[]) {
     new Cesium.Primitive({
       geometryInstances: lineInstances,
       appearance: new Cesium.PolylineColorAppearance({ translucent: false }),
-      asynchronous: false,
-    }),
-  );
-}
-
-function drawDsmMesh(d: Dsm) {
-  if (!viewer.value) return;
-  if (dsmMeshPrim.value) {
-    viewer.value.scene.primitives.remove(dsmMeshPrim.value);
-    dsmMeshPrim.value = null;
-  }
-  if (d.heights.length === 0) return;
-
-  const positions: number[] = [];
-  const vertIdx = new Map<number, number>();
-  const indices: number[] = [];
-  const getOrCreateIdx = (k: number): number => {
-    const existing = vertIdx.get(k);
-    if (existing !== undefined) return existing;
-    const carto = Cesium.Cartographic.clone(d.cartographics[k]);
-    carto.height = d.heights[k];
-    const pos = Cesium.Cartographic.toCartesian(carto);
-    const idx = positions.length / 3;
-    positions.push(pos.x, pos.y, pos.z);
-    vertIdx.set(k, idx);
-    return idx;
-  };
-
-  for (let j = 0; j < d.height - 1; j++) {
-    for (let i = 0; i < d.width - 1; i++) {
-      const k00 = j * d.width + i;
-      const k10 = j * d.width + i + 1;
-      const k01 = (j + 1) * d.width + i;
-      const k11 = (j + 1) * d.width + i + 1;
-      if (
-        !Number.isFinite(d.heights[k00]) ||
-        !Number.isFinite(d.heights[k10]) ||
-        !Number.isFinite(d.heights[k01]) ||
-        !Number.isFinite(d.heights[k11])
-      ) continue;
-      const i00 = getOrCreateIdx(k00);
-      const i10 = getOrCreateIdx(k10);
-      const i01 = getOrCreateIdx(k01);
-      const i11 = getOrCreateIdx(k11);
-      indices.push(i00, i10, i11, i00, i11, i01);
-    }
-  }
-  if (indices.length === 0) return;
-
-  const positionsArr = new Float64Array(positions);
-  const geom = new Cesium.Geometry({
-    attributes: {
-      position: new Cesium.GeometryAttribute({
-        componentDatatype: Cesium.ComponentDatatype.DOUBLE,
-        componentsPerAttribute: 3,
-        values: positionsArr,
-      }),
-    } as unknown as Cesium.GeometryAttributes,
-    indices: new Uint32Array(indices),
-    primitiveType: Cesium.PrimitiveType.TRIANGLES,
-    boundingSphere: Cesium.BoundingSphere.fromVertices(Array.from(positionsArr)),
-  });
-  const instance = new Cesium.GeometryInstance({
-    geometry: geom,
-    attributes: {
-      color: Cesium.ColorGeometryInstanceAttribute.fromColor(
-        Cesium.Color.CYAN.withAlpha(0.4),
-      ),
-    },
-  });
-  dsmMeshPrim.value = viewer.value.scene.primitives.add(
-    new Cesium.Primitive({
-      geometryInstances: [instance],
-      appearance: new Cesium.PerInstanceColorAppearance({
-        flat: true,
-        translucent: true,
-        closed: false,
-      }),
       asynchronous: false,
     }),
   );
@@ -586,7 +512,29 @@ function drawHull(boxes: HullBox[]) {
           {{ dsmStats.minH.toFixed(1) }}~{{ dsmStats.maxH.toFixed(1) }}m
         </div>
 
-        <label class="field-label hull-label" for="safety-dist">安全罩外扩 (m)</label>
+        <label class="field-label hull-label" for="wall-thresh">墙阈值 (m)</label>
+        <input
+          id="wall-thresh"
+          type="number"
+          min="1"
+          max="50"
+          step="0.5"
+          v-model.number="wallThreshold"
+          class="text-input"
+        />
+        <button
+          class="ghost-btn"
+          :disabled="!dsm"
+          @click="onBuildProxyMeshClick"
+        >
+          构建 Proxy Mesh
+        </button>
+        <div v-if="proxyMeshStats" class="caption">
+          ProxyMesh {{ proxyMeshStats.totalFaces }} 三角（顶 {{ proxyMeshStats.topFaces }} + 墙
+          {{ proxyMeshStats.wallFaces }}）· {{ proxyMeshStats.totalArea.toFixed(0) }} m²
+        </div>
+
+        <label class="field-label hull-label" for="safety-dist">视点距离 (m)</label>
         <input
           id="safety-dist"
           type="number"
@@ -596,38 +544,32 @@ function drawHull(boxes: HullBox[]) {
           v-model.number="safetyDistance"
           class="text-input"
         />
-        <button
-          class="ghost-btn"
-          :disabled="!dsm"
-          @click="onBuildShellClick"
-        >
-          构建安全罩
-        </button>
 
-        <label class="field-label hull-label" for="min-dist">采样间距 (m)</label>
+        <label class="field-label hull-label" for="sample-n">采样数 N</label>
         <input
-          id="min-dist"
+          id="sample-n"
           type="number"
-          min="2"
-          max="50"
-          step="1"
-          v-model.number="minDist"
+          min="50"
+          max="5000"
+          step="50"
+          v-model.number="sampleN"
           class="text-input"
         />
         <button
           class="ghost-btn"
-          :disabled="!shell"
-          @click="onPoissonSampleClick"
+          :disabled="!proxyMesh"
+          @click="onSurfaceSampleClick"
         >
-          泊松采样
+          表面采样
         </button>
-        <div v-if="sampleCount !== null" class="caption">
-          已采样 {{ sampleCount }} 个点
+        <div v-if="surfaceSamplesStats" class="caption">
+          采样 {{ surfaceSamplesStats.total }} 点（顶 {{ surfaceSamplesStats.top }} +
+          墙 {{ surfaceSamplesStats.wall }}）
         </div>
 
         <button
           class="ghost-btn"
-          :disabled="!samples.length || !dsm"
+          :disabled="!surfaceSamples.length"
           @click="onGenerateViewpointsClick"
         >
           生成视点
