@@ -1,22 +1,36 @@
-#include <httplib.h>
+#include "http/server.h"
 
+#include <atomic>
+#include <csignal>
 #include <iostream>
 
+namespace {
+
+std::atomic<dualgaze::http::Server*> g_running_server{nullptr};
+
+void on_signal(int /*sig*/) {
+    if (auto* s = g_running_server.load(); s != nullptr) {
+        s->stop();
+    }
+}
+
+void install_signal_handlers() {
+    std::signal(SIGINT, on_signal);
+    std::signal(SIGTERM, on_signal);
+}
+
+} // namespace
+
 int main() {
-    const char* host = "127.0.0.1";
-    const int port = 8080;
+    constexpr const char* kHost = "127.0.0.1";
+    constexpr int kPort = 8080;
 
-    httplib::Server server;
+    dualgaze::http::Server server;
+    g_running_server.store(&server);
+    install_signal_handlers();
 
-    server.Get("/api/health", [](const httplib::Request&, httplib::Response& res) {
-        res.set_content(R"({"status":"ok"})", "application/json");
-    });
-
-    server.Get("/api/ping", [](const httplib::Request&, httplib::Response& res) {
-        res.set_content(R"({"message":"pong from DualGaze"})", "application/json");
-    });
-
-    std::cout << "DualGaze backend listening on http://" << host << ":" << port << std::endl;
-    server.listen(host, port);
-    return 0;
+    std::cout << "[dualgaze] listening on http://" << kHost << ":" << kPort << std::endl;
+    const bool ok = server.listen(kHost, kPort);
+    g_running_server.store(nullptr);
+    return ok ? 0 : 1;
 }
