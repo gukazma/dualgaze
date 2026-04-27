@@ -1,0 +1,20 @@
+[package]
+name = "dualgaze-desktop"
+version = "0.1.0"
+description = "DualGaze 桌面壳 (Tauri 2)"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "dualgaze_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.6" }
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+log = "0.4"
+tauri = { version = "2.10.3" }
+tauri-plugin-log = "2"
