@@ -1,18 +1,35 @@
-# Build outputs
-backend/build/
-backend/out/
-frontend/dist/
-frontend/node_modules/
+# pnpm / node
+node_modules/
+.pnpm-store/
+.npm/
+*.log
+.npm-debug.log*
+
+# Build artifacts
+**/dist/
+**/build/
+**/out/
+**/target/
+
+# Tauri / Rust
+**/.cargo/
 
 # IDE
 .vs/
 .vscode/
 .idea/
+*.suo
 *.user
+*.ntvs*
+*.njsproj
+*.sln
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Playwright MCP local state
-.playwright-mcp/
+# Env
+.env
+.env.local
+.env.*.local

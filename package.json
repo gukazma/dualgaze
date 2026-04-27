@@ -1,0 +1,31 @@
+{
+  "name": "dualgaze",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "DualGaze - 倾斜摄影贴近航线规划（Cesium 跨平台可视化）",
+  "scripts": {
+    "dev": "pnpm --filter @dualgaze/frontend dev",
+    "dev:desktop": "pnpm --filter @dualgaze/desktop tauri:dev",
+    "build": "pnpm --filter @dualgaze/shared --filter @dualgaze/frontend build",
+    "build:desktop": "pnpm --filter @dualgaze/desktop tauri:build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "eslint": "^9.17.0",
+    "eslint-plugin-react": "^7.37.2",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2"
+  },
+  "packageManager": "pnpm@10.26.1",
+  "engines": {
+    "node": ">=20"
+  }
+}
