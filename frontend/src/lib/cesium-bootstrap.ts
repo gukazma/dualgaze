@@ -1,9 +1,4 @@
-import {
-  Cartesian3,
-  Ion,
-  OpenStreetMapImageryProvider,
-  Viewer,
-} from 'cesium';
+import { Cartesian3, Ion, OpenStreetMapImageryProvider, Viewer } from 'cesium';
 
 Ion.defaultAccessToken = import.meta.env.VITE_CESIUM_ION_TOKEN ?? '';
 
@@ -31,10 +26,17 @@ export function createViewer(container: HTMLElement): Viewer {
   const creditContainer = viewer.cesiumWidget.creditContainer as HTMLElement;
   creditContainer.style.display = 'none';
 
+  // setView (instantaneous, no path math) + ENU-correct orientation via lookAt
+  // would be ideal, but the simplest reliable approach is plain flyTo with a
+  // small but non-zero duration so Cesium computes a valid path direction.
   viewer.camera.flyTo({
     destination: Cartesian3.fromDegrees(116.397, 39.91, 8000),
-    duration: 0,
+    duration: 0.5,
   });
+
+  if (import.meta.env.DEV) {
+    (window as unknown as { __cesiumViewer?: Viewer }).__cesiumViewer = viewer;
+  }
 
   return viewer;
 }

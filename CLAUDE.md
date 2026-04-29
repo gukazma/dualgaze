@@ -57,9 +57,30 @@ pnpm typecheck && pnpm lint
 - **不要把 backend 加进 pnpm workspace**。它是独立的 C++ 项目。
 - **测试 / CI / 状态管理 / 路由 暂未引入**，等首个业务 feature 出现再选型。
 
+## 已实现 feature 模块
+
+### `frontend/src/features/sketch/` — 多边形草绘 + 挤出 (v1.5, SolidWorks 语义)
+
+- **范围**：在 globe / 3D Tiles 上点选多边形顶点、闭合后**鼠标拖拽实时挤出**，半透明青色棱柱
+- **基面语义**：B 方案——首点定 baseAltitude，后续点强制吸附到该水平面（严格平面 sketch）
+- **拾取**：`viewer.scene.pickPosition`（命中 3D Tiles / 地形优先），未命中回退 `pickEllipsoid`。tileset 灌进 datas/ 后自动支持
+- **状态机**：`idle → drawing → extruding → extruded`（闭合多边形后自动进入 extruding，初始默认 50m）
+- **入口**：rail 上的 "Sketch & Extrude" 槽（`Tool` 类型 = `'sketch'`）
+- **拖拽挤出**：extruding 状态下鼠标 Y 上下拖拽 = 实时调高度（scale 自适应相机高度）；input 框同步显示，可手动改写（focus 时自动暂停鼠标驱动）；左键单击 / 面板"完成挤出"按钮 commit；ESC 取消
+- **键盘**：`Enter` 闭合（drawing）、`Escape` 取消（drawing / extruding）；input focused 时键盘事件不触达 controller
+- **切 tool 时自动取消** drawing / extruding 未提交的 sketch；extruded 棱柱跨 tool 切换保留
+- **不做（v2+）**：顶点编辑 / 多 sketch 共存 / 撤销重做 / extruded 后再次 edit
+
+### `frontend/src/features/viewer/` — 主 Cesium viewer + rail + tiles 面板
+
+- `CesiumViewer.tsx` 是顶层组合：Cesium 容器 + Rail + 上下文面板（按 `activeTool` 选）
+- `useCesiumViewer` 返回 `Viewer | null` state（不是 ref），下游组件按 `viewer && ...` 条件渲染依赖
+- dev 模式 `__cesiumViewer` 暴露到 `window` 用于 Playwright / 调试
+
 ## 后续 step 入手点
 
-- 加载 `datas/3dtiles.json`（tileset 端到端验证）：`frontend/src/features/viewer/CesiumViewer.tsx` 内部
-- 新增 `/api/*` 接口：`backend/src/http/routes.cpp`
-- 新增前端业务模块：`frontend/src/features/<name>/`（按 feature 切分，不按文件类型切）
-- Tauri sidecar 自动启 backend：`desktop/src-tauri/tauri.conf.json` 的 `bundle.externalBin`
+- **加载真实 tileset**（按 memory 约定用 `datas/3dtiles.json` 端到端验证）：`TilesetPanel.tsx` 已经接 `Cesium3DTileset.fromUrl`，等 datas/ 灌真数据
+- **sketch v2**：拖拽实时挤出 → `SketchController.applyExtrude` 改成接 mouse 事件流；顶点编辑 → 加 vertex handle entities
+- **新增 `/api/*` 接口**：`backend/src/http/routes.cpp`
+- **新增前端 feature**：`frontend/src/features/<name>/`（按 feature 切分，不按文件类型切）
+- **Tauri sidecar 自动启 backend**：`desktop/src-tauri/tauri.conf.json` 的 `bundle.externalBin`

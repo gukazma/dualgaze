@@ -33,3 +33,10 @@ desktop.ini
 .env
 .env.local
 .env.*.local
+
+# Claude / Playwright local artifacts
+.claude/
+.playwright-mcp/
+
+# Debug screenshots at repo root (from Playwright test sessions)
+/*.png
