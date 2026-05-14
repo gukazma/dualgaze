@@ -1,6 +1,7 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { WaypointList } from './WaypointList';
 import { MissionConfigPanel } from './MissionConfigPanel';
+import { WaypointActionsPanel } from './WaypointActionsPanel';
 import { useCurrentMission } from '../store/missions';
 import { useUiStore } from '../store/ui';
 
@@ -57,7 +58,7 @@ export function RightSheet() {
             <MissionConfigPanel />
           </TabsContent>
           <TabsContent value="actions" className="mt-0 flex-1 overflow-hidden">
-            <Placeholder note="M5 实现：每航点动作组（拍照 / 录像 / 云台旋转 / hover）" />
+            <WaypointActionsPanel />
           </TabsContent>
         </Tabs>
       ) : (
@@ -69,10 +70,3 @@ export function RightSheet() {
   );
 }
 
-function Placeholder({ note }: { note: string }) {
-  return (
-    <div className="flex h-full items-center justify-center p-6 text-center text-[11px] text-text-muted">
-      {note}
-    </div>
-  );
-}

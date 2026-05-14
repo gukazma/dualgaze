@@ -1,12 +1,15 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import {
+  createAction as buildAction,
   createBlankMission,
   createWaypoint as buildWaypoint,
   migrateMissionToLatest,
   type Mission,
   type MissionType,
   type Waypoint,
+  type WaypointAction,
+  type WaypointActionType,
 } from '../types/mission';
 
 interface MissionsState {
@@ -34,6 +37,11 @@ interface MissionsState {
   reverseWaypoints: () => void;
   clearWaypoints: () => void;
   selectWaypoint: (id: string | null) => void;
+
+  // waypoint actions CRUD
+  addAction: (waypointId: string, type: WaypointActionType) => string | null;
+  updateAction: (waypointId: string, actionId: string, patch: Partial<Omit<WaypointAction, 'id'>>) => void;
+  removeAction: (waypointId: string, actionId: string) => void;
 }
 
 const reindex = (waypoints: Waypoint[]): Waypoint[] =>
@@ -141,11 +149,47 @@ export const useMissionsStore = create<MissionsState>()(
         clearWaypoints: () => updCurrent((m) => ({ ...m, waypoints: [] })),
 
         selectWaypoint: (id) => set({ selectedWaypointId: id }),
+
+        addAction: (waypointId, type) => {
+          const action = buildAction(type);
+          updCurrent((m) => ({
+            ...m,
+            waypoints: m.waypoints.map((w) =>
+              w.id === waypointId ? { ...w, actions: [...w.actions, action] } : w,
+            ),
+          }));
+          return action.id;
+        },
+
+        updateAction: (waypointId, actionId, patch) =>
+          updCurrent((m) => ({
+            ...m,
+            waypoints: m.waypoints.map((w) =>
+              w.id === waypointId
+                ? {
+                    ...w,
+                    actions: w.actions.map((a) =>
+                      a.id === actionId ? { ...a, ...patch } : a,
+                    ),
+                  }
+                : w,
+            ),
+          })),
+
+        removeAction: (waypointId, actionId) =>
+          updCurrent((m) => ({
+            ...m,
+            waypoints: m.waypoints.map((w) =>
+              w.id === waypointId
+                ? { ...w, actions: w.actions.filter((a) => a.id !== actionId) }
+                : w,
+            ),
+          })),
       };
     },
     {
       name: 'dualgaze.missions',
-      version: 2,
+      version: 3,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         missions: state.missions,

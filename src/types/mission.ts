@@ -96,6 +96,15 @@ export const PAYLOAD_CATALOG: ReadonlyArray<PayloadModel> = [
 
 // ---------- Waypoint / Mission ----------
 
+export type WaypointActionType = 'takePhoto' | 'startRecord' | 'stopRecord' | 'hover';
+
+export interface WaypointAction {
+  id: string;
+  type: WaypointActionType;
+  /** 仅 'hover' 用：悬停时长（秒） */
+  hoverSeconds?: number;
+}
+
 export interface Waypoint {
   id: string;
   index: number;
@@ -113,6 +122,8 @@ export interface Waypoint {
   pitch: number;
   /** 水平视场角 ° (默认 60) */
   fov: number;
+  /** 抵达此航点时执行的动作组（拍照/录像/悬停 etc.） */
+  actions: WaypointAction[];
 }
 
 export type HeightMode = 'WGS84' | 'relativeToStartPoint' | 'realTimeFollowSurface';
@@ -192,11 +203,16 @@ export function createBlankMission(init: {
   };
 }
 
-/** persist v1 → v2 迁移：把缺失的 MissionConfig 字段补默认值 */
+/** persist 迁移：补齐 MissionConfig 字段 + 每个 waypoint 补 actions=[]（v3） */
 export function migrateMissionToLatest(m: Partial<Mission> & Pick<Mission, 'id' | 'name' | 'type' | 'droneId' | 'payloadId' | 'waypoints' | 'createdAt' | 'updatedAt'>): Mission {
+  const waypoints = m.waypoints.map((wp) => ({
+    ...wp,
+    actions: Array.isArray(wp.actions) ? wp.actions : [],
+  }));
   return {
     ...MISSION_DEFAULTS,
     ...m,
+    waypoints,
   } as Mission;
 }
 
@@ -220,5 +236,14 @@ export function createWaypoint(init: {
     heading: init.heading ?? 0,
     pitch: init.pitch ?? -25,
     fov: init.fov ?? 60,
+    actions: [],
+  };
+}
+
+export function createAction(type: WaypointActionType): WaypointAction {
+  return {
+    id: newId('act'),
+    type,
+    ...(type === 'hover' ? { hoverSeconds: 3 } : {}),
   };
 }
