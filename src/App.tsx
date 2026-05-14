@@ -1,4 +1,5 @@
 import { CesiumViewer } from './features/cesium/CesiumViewer';
+import { useFlyToMission } from './features/cesium/useFlyToMission';
 import { WaypointLayer } from './features/waypoint/WaypointLayer';
 import { DroneLayer } from './features/simulation/DroneLayer';
 import { useSimulationLoop } from './features/simulation/SimulationLoop';
@@ -11,6 +12,7 @@ import { useSimulationStore } from './store/simulation';
 
 export function App() {
   useSimulationLoop();
+  useFlyToMission();
   const mode = useSimulationStore((s) => s.mode);
   const isSimulating = mode === 'simulating';
 
