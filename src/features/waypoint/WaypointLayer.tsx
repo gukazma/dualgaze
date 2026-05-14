@@ -3,8 +3,12 @@ import * as Cesium from 'cesium';
 import type { Viewer } from 'cesium';
 import { useCesiumViewer } from '../cesium/CesiumContext';
 import { useCurrentMission, useMissionsStore } from '../../store/missions';
+import { useSimulationStore } from '../../store/simulation';
 import { WaypointPicker, waypointToCartesian3 } from './WaypointPicker';
 import type { Waypoint } from '../../types/mission';
+
+const COLOR_PENDING = Cesium.Color.fromCssColorString('#ffd24a');
+const COLOR_REACHED = Cesium.Color.fromCssColorString('#00d2c0');
 
 /**
  * 在 viewer 上挂航点 layer + WaypointPicker。
@@ -16,6 +20,7 @@ export function WaypointLayer() {
   const viewer = useCesiumViewer();
   const mission = useCurrentMission();
   const selectedWaypointId = useMissionsStore((s) => s.selectedWaypointId);
+  const reachedIds = useSimulationStore((s) => s.reachedWaypointIds);
 
   // picker lifecycle —— 只跟 viewer 创建/销毁，不随 mission 重建
   const pickerRef = useRef<WaypointPicker | null>(null);
@@ -81,32 +86,36 @@ export function WaypointLayer() {
     mission.waypoints.forEach((wp, idx) => {
       currentIds.add(wp.id);
       const isSelected = wp.id === selectedWaypointId;
+      const isReached = reachedIds.has(wp.id);
+      const fillColor = isReached ? COLOR_REACHED : COLOR_PENDING;
+      const labelText = isReached ? '✓' : String(idx + 1);
       const existing = map.get(wp.id);
       const position = waypointToCartesian3(wp);
       if (existing) {
         existing.position = new Cesium.ConstantPositionProperty(position);
         if (existing.point) {
           existing.point.pixelSize = new Cesium.ConstantProperty(isSelected ? 14 : 11);
+          existing.point.color = new Cesium.ConstantProperty(fillColor);
           existing.point.outlineColor = new Cesium.ConstantProperty(
             isSelected ? Cesium.Color.WHITE : Cesium.Color.BLACK,
           );
           existing.point.outlineWidth = new Cesium.ConstantProperty(isSelected ? 3 : 1);
         }
         if (existing.label) {
-          existing.label.text = new Cesium.ConstantProperty(String(idx + 1));
+          existing.label.text = new Cesium.ConstantProperty(labelText);
         }
       } else {
         const entity = ds.entities.add({
           position,
           point: {
             pixelSize: isSelected ? 14 : 11,
-            color: Cesium.Color.fromCssColorString('#ffd24a'),
+            color: fillColor,
             outlineColor: isSelected ? Cesium.Color.WHITE : Cesium.Color.BLACK,
             outlineWidth: isSelected ? 3 : 1,
             disableDepthTestDistance: Number.POSITIVE_INFINITY,
           },
           label: {
-            text: String(idx + 1),
+            text: labelText,
             font: '11px sans-serif',
             fillColor: Cesium.Color.BLACK,
             outlineColor: Cesium.Color.WHITE,
@@ -129,7 +138,7 @@ export function WaypointLayer() {
         map.delete(id);
       }
     }
-  }, [mission, mission?.waypoints, selectedWaypointId]);
+  }, [mission, mission?.waypoints, selectedWaypointId, reachedIds]);
 
   return null;
 }

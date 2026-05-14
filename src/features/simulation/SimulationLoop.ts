@@ -72,14 +72,11 @@ export function useSimulationLoop(): void {
         heading: bearingDeg(seg.from.lon, seg.from.lat, seg.to.lon, seg.to.lat),
       };
 
-      // 抵达逻辑：t 接近 1（或 segIdx 进展）→ mark seg.to.id reached
+      // 抵达逻辑：每帧无条件 mark seg.from（idempotent Set；drone 在它身上即"到过"），
+      // 段终点的 t 接近 1 时再 mark seg.to。这样 WP1 也会从 sim 起始就被标记。
+      useSimulationStore.getState().markReached(seg.from.id);
       const reachedThisFrame = t >= 1 - 1e-6;
-      if (reachedThisFrame || segIdx > state.currentSegmentIndex) {
-        // mark from waypoint (起点) reached when first leaving；
-        // mark to waypoint reached when segment 100%
-        useSimulationStore.getState().markReached(seg.from.id);
-        if (reachedThisFrame) useSimulationStore.getState().markReached(seg.to.id);
-      }
+      if (reachedThisFrame) useSimulationStore.getState().markReached(seg.to.id);
 
       useSimulationStore.getState().tick(elapsed, droneState, segIdx);
 

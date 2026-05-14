@@ -2,6 +2,7 @@ import { CesiumViewer } from './features/cesium/CesiumViewer';
 import { useFlyToMission } from './features/cesium/useFlyToMission';
 import { WaypointLayer } from './features/waypoint/WaypointLayer';
 import { DroneLayer } from './features/simulation/DroneLayer';
+import { FrustumLayer } from './features/frustum/FrustumLayer';
 import { useSimulationLoop } from './features/simulation/SimulationLoop';
 import { TopBar } from './components/TopBar';
 import { MissionLibrary } from './components/MissionLibrary';
@@ -30,6 +31,7 @@ export function App() {
           <CesiumViewer />
           <WaypointLayer />
           <DroneLayer />
+          <FrustumLayer />
           {isSimulating && <FpvWindow />}
         </div>
 
