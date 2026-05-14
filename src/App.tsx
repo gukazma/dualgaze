@@ -1,63 +1,54 @@
 import { CesiumViewer } from './features/cesium/CesiumViewer';
+import { TopBar } from './components/TopBar';
+import { MissionLibrary } from './components/MissionLibrary';
+import { CreateMissionModal } from './components/CreateMissionModal';
+import { useCurrentMission } from './store/missions';
 
 export function App() {
+  const mission = useCurrentMission();
+
   return (
     <div className="flex h-full w-full flex-col bg-bg text-text-primary">
-      {/* TopBar — M2 实现 */}
-      <header className="flex h-14 items-center justify-between border-b border-border-subtle bg-bg-surface px-5">
-        <div className="flex items-center gap-3">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-accent text-[11px] font-bold text-bg">
-            DG
-          </div>
-          <div className="flex flex-col gap-0.5">
-            <span className="text-[13px] font-semibold">DualGaze</span>
-            <span className="text-[11px] text-text-secondary">
-              v0.2 shell · M0 React 迁移完成
-            </span>
-          </div>
-        </div>
-        <div className="text-[11px] text-text-secondary">
-          M2-M3 toolbar 占位
-        </div>
-      </header>
+      <TopBar />
 
       {/* Main area */}
       <main className="flex flex-1 overflow-hidden">
-        {/* LeftSheet — M2 MissionLibrary */}
         <aside className="w-[280px] border-r border-border-subtle bg-bg-surface">
-          <div className="flex h-12 items-center border-b border-border-subtle px-4 text-[13px] font-semibold">
-            航线库
-          </div>
-          <div className="p-3 text-[12px] text-text-secondary">
-            （M2 实现）
-          </div>
+          <MissionLibrary />
         </aside>
 
-        {/* Cesium viewer */}
         <div className="relative flex-1 overflow-hidden bg-bg">
           <CesiumViewer />
         </div>
 
-        {/* RightSheet — M3 WaypointList */}
         <aside className="w-[340px] border-l border-border-subtle bg-bg-surface">
-          <div className="flex h-12 items-center border-b border-border-subtle px-4 text-[13px] font-semibold">
-            航线详情
+          <div className="flex h-12 items-center justify-between border-b border-border-subtle px-4">
+            <span className="text-[13px] font-semibold">
+              {mission ? mission.name : '航线详情'}
+            </span>
+            {mission && (
+              <span className="rounded-full bg-bg-input px-2 py-0.5 text-[10px] font-semibold text-text-secondary">
+                {mission.waypoints.length} 航点
+              </span>
+            )}
           </div>
           <div className="p-3 text-[12px] text-text-secondary">
-            （M3 实现）
+            {mission ? '（M3 实现航点编辑器）' : '从左侧选择或新建一个任务'}
           </div>
         </aside>
       </main>
 
-      {/* StatusBar — M4 PlaybackBar 会替换 */}
+      {/* StatusBar */}
       <footer className="flex h-9 items-center justify-between border-t border-border-subtle bg-bg-surface px-4 text-[11px] text-text-secondary">
         <span className="flex items-center gap-2">
           <span className="inline-flex h-1.5 w-1.5 rounded-full bg-accent-cyan" />
           高德 GCJ-02 底图
           <span className="text-text-muted">· WGS84 航点自动修正偏移</span>
         </span>
-        <span className="text-text-muted">M2 加 Mission CRUD</span>
+        <span className="text-text-muted">M3 加航点编辑器</span>
       </footer>
+
+      <CreateMissionModal />
     </div>
   );
 }
