@@ -21,9 +21,10 @@ export function createViewer(container: HTMLElement): Cesium.Viewer {
   });
 
   // 纯点云场景：关掉地球 / 天空 / 大气，只剩 tileset 浮在暗色背景上
+  // (M1 将切换为 AMap 底图，那时重新开启 globe + skyBox + skyAtmosphere)
   viewer.scene.globe.show = false;
-  viewer.scene.skyBox.show = false;
-  viewer.scene.skyAtmosphere.show = false;
+  if (viewer.scene.skyBox) viewer.scene.skyBox.show = false;
+  if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = false;
   viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#0c0d10');
 
   // 让 pickPosition 能从深度缓冲拿坐标

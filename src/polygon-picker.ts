@@ -262,7 +262,10 @@ export class PolygonPicker {
   ): Cesium.Cartesian3 | null {
     const ray = this.viewer.camera.getPickRay(p);
     if (!ray) return null;
-    const r = this.viewer.scene.pickFromRay(ray, exclude);
+    // Cesium 1.124 的 .d.ts 漏了 pickFromRay 的签名，但 runtime 有；cast 绕过
+    const r = (this.viewer.scene as unknown as {
+      pickFromRay: (ray: Cesium.Ray, exclude?: object[]) => { position?: Cesium.Cartesian3 } | undefined;
+    }).pickFromRay(ray, exclude);
     const pos = r?.position;
     if (pos && Number.isFinite(pos.x) && Number.isFinite(pos.y) && Number.isFinite(pos.z)) {
       return pos;
@@ -361,10 +364,11 @@ export class PolygonPicker {
         outlineWidth: 2,
         disableDepthTestDistance: Number.POSITIVE_INFINITY,
       },
+      // Entity.show 在 d.ts 里被收紧成 boolean，但 runtime 支持 BooleanProperty
       show: new Cesium.CallbackProperty(
         () => this.state === 'drawing' && this.snapPos !== null,
         false,
-      ) as unknown as Cesium.Property,
+      ) as unknown as boolean,
     });
   }
 
