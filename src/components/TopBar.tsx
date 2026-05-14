@@ -1,10 +1,13 @@
+import { useRef } from 'react';
 import { Pencil, Plus, Download, Upload, Play, Radio } from 'lucide-react';
 import { Button } from './ui/button';
-import { useCurrentMission } from '../store/missions';
+import { useCurrentMission, useMissionsStore } from '../store/missions';
 import { useUiStore } from '../store/ui';
 import { useSimulationStore } from '../store/simulation';
 import { prepareSimulation } from '../features/simulation/SimulationLoop';
 import { DRONE_CATALOG, PAYLOAD_CATALOG } from '../types/mission';
+import { exportMissionToKmz } from '../lib/kmz-export';
+import { importKmzToMission } from '../lib/kmz-import';
 import { cn } from '../lib/utils';
 
 export function TopBar() {
@@ -13,6 +16,7 @@ export function TopBar() {
   const mode = useSimulationStore((s) => s.mode);
   const enterSim = useSimulationStore((s) => s.enterSim);
   const exitSim = useSimulationStore((s) => s.exitSim);
+  const importKmzInputRef = useRef<HTMLInputElement>(null);
 
   const drone = mission ? DRONE_CATALOG.find((d) => d.id === mission.droneId) : null;
   const payload = mission ? PAYLOAD_CATALOG.find((p) => p.id === mission.payloadId) : null;
@@ -28,6 +32,44 @@ export function TopBar() {
     const prep = prepareSimulation();
     if (prep.startState && prep.totalDurationMs > 0) {
       enterSim(prep.totalDurationMs, prep.startState);
+    }
+  };
+
+  const handleExportKmz = async (): Promise<void> => {
+    if (!mission) return;
+    try {
+      const blob = await exportMissionToKmz(mission);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${mission.name || 'mission'}.kmz`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('[KMZ] export failed', err);
+    }
+  };
+
+  const handleImportKmz = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
+    const file = e.target.files?.[0];
+    e.target.value = ''; // 让同名文件可以再次触发 change
+    if (!file) return;
+    try {
+      const { mission: imported, warnings } = await importKmzToMission(file);
+      if (warnings.length > 0) {
+        console.warn('[KMZ] import warnings:', warnings);
+      }
+      // 写入 store：addMission + selectMission
+      useMissionsStore.setState((s) => ({
+        missions: [imported, ...s.missions],
+        currentMissionId: imported.id,
+        selectedWaypointId: null,
+      }));
+    } catch (err) {
+      console.error('[KMZ] import failed', err);
+      alert(`导入失败: ${err instanceof Error ? err.message : String(err)}`);
     }
   };
 
@@ -87,11 +129,30 @@ export function TopBar() {
           <Plus className="h-3 w-3" />
           新建
         </Button>
-        <Button size="sm" variant="outline" className="gap-1.5" disabled>
+        <input
+          ref={importKmzInputRef}
+          type="file"
+          accept=".kmz"
+          className="hidden"
+          onChange={handleImportKmz}
+        />
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5"
+          onClick={() => importKmzInputRef.current?.click()}
+          disabled={isSimulating}
+        >
           <Download className="h-3 w-3" />
           导入 KMZ
         </Button>
-        <Button size="sm" variant="outline" className="gap-1.5" disabled>
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5"
+          onClick={() => void handleExportKmz()}
+          disabled={isSimulating || !mission || mission.waypoints.length < 1}
+        >
           <Upload className="h-3 w-3" />
           导出 KMZ
         </Button>
