@@ -4,13 +4,17 @@ import {
   createAction as buildAction,
   createBlankMission,
   createWaypoint as buildWaypoint,
+  MAPPING_DEFAULTS,
   migrateMissionToLatest,
+  type MappingScanParams,
   type Mission,
   type MissionType,
+  type PolygonVertex,
   type Waypoint,
   type WaypointAction,
   type WaypointActionType,
 } from '../types/mission';
+import { generateScanPath } from '../lib/mapping-scan';
 
 interface MissionsState {
   missions: Mission[];
@@ -44,10 +48,40 @@ interface MissionsState {
   addAction: (waypointId: string, type: WaypointActionType) => string | null;
   updateAction: (waypointId: string, actionId: string, patch: Partial<Omit<WaypointAction, 'id'>>) => void;
   removeAction: (waypointId: string, actionId: string) => void;
+
+  // mapping CRUD（针对 currentMission；要求 mission.type === 'mapping'）
+  /** 设置多边形顶点，自动触发扫描路径重算 */
+  setPolygon: (polygon: PolygonVertex[]) => void;
+  /** 追加一个多边形顶点（用于地图画图） */
+  addPolygonVertex: (v: PolygonVertex) => void;
+  /** 更新单个顶点（用于拖动） */
+  updatePolygonVertex: (idx: number, v: Partial<PolygonVertex>) => void;
+  /** 删除单个顶点 */
+  removePolygonVertex: (idx: number) => void;
+  /** 更新扫描参数；自动触发扫描路径重算 */
+  updateScanParams: (patch: Partial<MappingScanParams>) => void;
+  /** 手动触发重算（一般 set/update 时自动；外部调用兜底） */
+  recomputeScanPath: () => void;
 }
 
 const reindex = (waypoints: Waypoint[]): Waypoint[] =>
   waypoints.map((w, i) => (w.index === i ? w : { ...w, index: i }));
+
+/**
+ * mapping mission：根据当前 polygon + scanParams 重新生成 scanPath。
+ * 非 mapping 类型直接返回原对象。
+ */
+const withRecomputedScan = (m: Mission): Mission => {
+  if (m.type !== 'mapping') return m;
+  const polygon = m.polygon ?? [];
+  const params = m.scanParams ?? MAPPING_DEFAULTS;
+  if (polygon.length < 3) return { ...m, scanPath: [] };
+  const path = generateScanPath(polygon, params, {
+    alt: m.globalHeight,
+    speed: m.globalSpeed,
+  });
+  return { ...m, scanPath: path };
+};
 
 const touch = (m: Mission): Mission => ({ ...m, updatedAt: Date.now() });
 
@@ -198,11 +232,46 @@ export const useMissionsStore = create<MissionsState>()(
                 : w,
             ),
           })),
+
+        // ===== mapping =====
+
+        setPolygon: (polygon) =>
+          updCurrent((m) => withRecomputedScan({ ...m, polygon })),
+
+        addPolygonVertex: (v) =>
+          updCurrent((m) => withRecomputedScan({ ...m, polygon: [...(m.polygon ?? []), v] })),
+
+        updatePolygonVertex: (idx, patch) =>
+          updCurrent((m) => {
+            const poly = m.polygon ?? [];
+            if (idx < 0 || idx >= poly.length) return m;
+            const next = poly.map((v, i) => (i === idx ? { ...v, ...patch } : v));
+            return withRecomputedScan({ ...m, polygon: next });
+          }),
+
+        removePolygonVertex: (idx) =>
+          updCurrent((m) => {
+            const poly = m.polygon ?? [];
+            if (idx < 0 || idx >= poly.length) return m;
+            return withRecomputedScan({
+              ...m,
+              polygon: poly.filter((_, i) => i !== idx),
+            });
+          }),
+
+        updateScanParams: (patch) =>
+          updCurrent((m) => {
+            const params = { ...(m.scanParams ?? MAPPING_DEFAULTS), ...patch };
+            return withRecomputedScan({ ...m, scanParams: params });
+          }),
+
+        recomputeScanPath: () =>
+          updCurrent((m) => withRecomputedScan(m)),
       };
     },
     {
       name: 'dualgaze.missions',
-      version: 3,
+      version: 4,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         missions: state.missions,

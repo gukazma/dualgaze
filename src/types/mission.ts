@@ -7,8 +7,8 @@
 
 export type MissionType = 'patrol' | 'mapping' | 'strip' | 'facade';
 
-/** v1 仅 'patrol' 可编辑；其它 3 个在 CreateMissionModal 上展示为 disabled */
-export const ENABLED_MISSION_TYPES: ReadonlySet<MissionType> = new Set(['patrol']);
+/** v2 启用 'patrol' + 'mapping'；strip / facade 仍 disabled */
+export const ENABLED_MISSION_TYPES: ReadonlySet<MissionType> = new Set(['patrol', 'mapping']);
 
 export interface MissionTypeMeta {
   id: MissionType;
@@ -31,7 +31,7 @@ export const MISSION_TYPE_CATALOG: ReadonlyArray<MissionTypeMeta> = [
     label: '面状航线',
     description: '多边形 → S 型扫描',
     iconName: 'grid-3x3',
-    disabled: true,
+    disabled: false,
   },
   {
     id: 'strip',
@@ -133,6 +133,29 @@ export type RCLostAction = 'goBack' | 'hover' | 'landing';
 export type ExitOnRCLost = 'executeLostAction' | 'goContinue';
 export type GlobalCameraAction = 'none' | 'takePhoto' | 'startRecord';
 
+/** mapping 扫描参数 —— S 型路径生成的输入 */
+export interface MappingScanParams {
+  /** 航线间距 m (5–200) */
+  spacing: number;
+  /** 朝向角 ° (0–359；0 = 南北方向扫描 / 90 = 东西方向扫描) */
+  direction: number;
+  /** 向内缩进 m (0–50) */
+  margin: number;
+  /** 云台俯仰 ° (-90 朝下 ~ 30 朝上) */
+  gimbalPitchAngle: number;
+  /** 横向重叠率 0–0.9（v2 持久化但不联动 spacing） */
+  overlapH: number;
+  /** 纵向重叠率 0–0.9 */
+  overlapW: number;
+}
+
+/** mapping 多边形顶点（WGS84） */
+export interface PolygonVertex {
+  lon: number;
+  lat: number;
+  alt: number;
+}
+
 export interface Mission {
   id: string;
   name: string;
@@ -146,6 +169,12 @@ export interface Mission {
   globalHeight: number;
   /** 高度模式 */
   heightMode: HeightMode;
+  /** mapping 类型：多边形顶点。patrol 不用，undefined。 */
+  polygon?: PolygonVertex[];
+  /** mapping 类型：算出来的 S 扫描航点（scanParams / polygon 变化时重算） */
+  scanPath?: Waypoint[];
+  /** mapping 类型：扫描参数 */
+  scanParams?: MappingScanParams;
   /** 安全起飞高度 m（执行任务前先爬升到此高度才进入航线，DJI WPML takeOffSecurityHeight） */
   takeOffSecurityHeight: number;
   /** 飞向首航点模式：安全模式（先到首航点正上方再下降）/ 点对点直飞 */
@@ -178,6 +207,16 @@ export const MISSION_DEFAULTS = {
   globalAction: 'none' as GlobalCameraAction,
 } as const;
 
+/** mapping 扫描参数默认值（跟 dji_way_line aiPatrol 一致） */
+export const MAPPING_DEFAULTS: MappingScanParams = {
+  spacing: 20,
+  direction: 0,
+  margin: 0,
+  gimbalPitchAngle: -45,
+  overlapH: 0.8,
+  overlapW: 0.7,
+};
+
 // ---------- Factory ----------
 
 let _waypointSeq = 0;
@@ -190,7 +229,7 @@ export function createBlankMission(init: {
   payloadId: string;
 }): Mission {
   const now = Date.now();
-  return {
+  const base: Mission = {
     id: newId('m'),
     name: init.name,
     type: init.type,
@@ -201,19 +240,36 @@ export function createBlankMission(init: {
     createdAt: now,
     updatedAt: now,
   };
+  if (init.type === 'mapping') {
+    base.polygon = [];
+    base.scanPath = [];
+    base.scanParams = { ...MAPPING_DEFAULTS };
+  }
+  return base;
 }
 
-/** persist 迁移：补齐 MissionConfig 字段 + 每个 waypoint 补 actions=[]（v3） */
+/**
+ * persist 迁移：补齐 MissionConfig 字段（v2）+ 每 waypoint 补 actions=[]（v3）
+ * + mapping 字段 polygon/scanPath/scanParams 兜底（v4）
+ */
 export function migrateMissionToLatest(m: Partial<Mission> & Pick<Mission, 'id' | 'name' | 'type' | 'droneId' | 'payloadId' | 'waypoints' | 'createdAt' | 'updatedAt'>): Mission {
   const waypoints = m.waypoints.map((wp) => ({
     ...wp,
     actions: Array.isArray(wp.actions) ? wp.actions : [],
   }));
-  return {
+  const next: Mission = {
     ...MISSION_DEFAULTS,
     ...m,
     waypoints,
   } as Mission;
+  if (next.type === 'mapping') {
+    next.polygon = Array.isArray(m.polygon) ? m.polygon : [];
+    next.scanPath = Array.isArray(m.scanPath)
+      ? m.scanPath.map((wp) => ({ ...wp, actions: Array.isArray(wp.actions) ? wp.actions : [] }))
+      : [];
+    next.scanParams = m.scanParams ?? { ...MAPPING_DEFAULTS };
+  }
+  return next;
 }
 
 export function createWaypoint(init: {
