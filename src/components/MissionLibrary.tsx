@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, MoreHorizontal, ChevronDown } from 'lucide-react';
+import { Plus, MoreHorizontal, ChevronDown, Sparkles } from 'lucide-react';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import {
@@ -20,7 +20,34 @@ import {
 import { useMissionsStore } from '../store/missions';
 import { useUiStore } from '../store/ui';
 import { DRONE_CATALOG, type Mission } from '../types/mission';
+import { BAVARIA_DEMO_OFFSETS, BAVARIA_DEMO_PRESET, TILESET_CENTER } from '../lib/tileset';
 import { cn } from '../lib/utils';
+
+function loadBavariaDemo(): void {
+  const store = useMissionsStore.getState();
+  const id = store.createMission({
+    name: BAVARIA_DEMO_PRESET.name,
+    type: 'patrol',
+    droneId: BAVARIA_DEMO_PRESET.droneId,
+    payloadId: BAVARIA_DEMO_PRESET.payloadId,
+  });
+  const alt = TILESET_CENTER.alt + BAVARIA_DEMO_PRESET.altOffset;
+  // createMission 已经设了 currentMissionId 为新 id，addWaypoint 直接挂上去
+  for (const { dLon, dLat } of BAVARIA_DEMO_OFFSETS) {
+    store.addWaypoint({
+      lon: TILESET_CENTER.lon + dLon,
+      lat: TILESET_CENTER.lat + dLat,
+      alt,
+      speed: BAVARIA_DEMO_PRESET.speed,
+      pitch: BAVARIA_DEMO_PRESET.pitch,
+      fov: BAVARIA_DEMO_PRESET.fov,
+    });
+  }
+  store.updateMission(id, {
+    globalSpeed: BAVARIA_DEMO_PRESET.speed,
+    globalHeight: BAVARIA_DEMO_PRESET.altOffset,
+  });
+}
 
 export function MissionLibrary() {
   const missions = useMissionsStore((s) => s.missions);
@@ -39,14 +66,25 @@ export function MissionLibrary() {
             </span>
           )}
         </div>
-        <Button
-          size="icon"
-          variant="outline"
-          onClick={openCreateModal}
-          className="h-6 w-6 border-border bg-bg-input"
-        >
-          <Plus className="h-3 w-3" />
-        </Button>
+        <div className="flex items-center gap-1">
+          <Button
+            size="icon"
+            variant="outline"
+            onClick={loadBavariaDemo}
+            className="h-6 w-6 border-border bg-bg-input"
+            title="加载 Bavaria 演示航线"
+          >
+            <Sparkles className="h-3 w-3 text-accent-cyan" />
+          </Button>
+          <Button
+            size="icon"
+            variant="outline"
+            onClick={openCreateModal}
+            className="h-6 w-6 border-border bg-bg-input"
+          >
+            <Plus className="h-3 w-3" />
+          </Button>
+        </div>
       </div>
 
       {/* 筛选行（v1 静态 placeholder） */}
@@ -89,12 +127,20 @@ function FilterButton({ label }: { label: string }) {
 
 function EmptyState({ onCreate }: { onCreate: () => void }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 px-4 py-10 text-center">
+    <div className="flex flex-col items-center justify-center gap-2.5 px-4 py-10 text-center">
       <div className="text-[12px] text-text-secondary">还没有航线</div>
       <Button size="sm" onClick={onCreate} className="gap-1.5">
         <Plus className="h-3 w-3" />
         新建第一条
       </Button>
+      <button
+        type="button"
+        onClick={loadBavariaDemo}
+        className="flex items-center gap-1.5 text-[11px] text-accent-cyan hover:text-accent-cyan/80"
+      >
+        <Sparkles className="h-2.5 w-2.5" />
+        加载 Bavaria 演示
+      </button>
     </div>
   );
 }

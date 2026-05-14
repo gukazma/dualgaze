@@ -8,6 +8,7 @@ import { MissionLibrary } from './components/MissionLibrary';
 import { CreateMissionModal } from './components/CreateMissionModal';
 import { RightSheet } from './components/RightSheet';
 import { PlaybackBar } from './components/PlaybackBar';
+import { FpvWindow } from './components/FpvWindow';
 import { useSimulationStore } from './store/simulation';
 
 export function App() {
@@ -29,6 +30,7 @@ export function App() {
           <CesiumViewer />
           <WaypointLayer />
           <DroneLayer />
+          {isSimulating && <FpvWindow />}
         </div>
 
         <aside className="w-[340px] border-l border-border-subtle bg-bg-surface">
