@@ -6,7 +6,7 @@ import { useSimulationStore } from '../../store/simulation';
 import { wgs84ToCartesian3 } from '../../lib/coord';
 import type { Waypoint } from '../../types/mission';
 
-const FAR_METERS = 30;
+const FAR_METERS = 6;
 const ASPECT = 4 / 3;
 
 /**
