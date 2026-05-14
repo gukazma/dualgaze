@@ -21,6 +21,5 @@ Thumbs.db
 .playwright-mcp/
 *.png
 
-# Real-world point cloud data —— 用户自己的摄影测量产出，按需自行 commit
-public/datas/pnts/*
-!public/datas/pnts/.gitkeep
+# Real-world point cloud data —— Bavaria 工程 P06_PNTS 输出，11.9 MB 一并入库做 demo
+# （想换成自己的数据时把 tileset.json + Tile/ 替换掉即可）
