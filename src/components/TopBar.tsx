@@ -9,6 +9,7 @@ import { DRONE_CATALOG, PAYLOAD_CATALOG } from '../types/mission';
 import { exportMissionToKmz } from '../lib/kmz-export';
 import { importKmzToMission } from '../lib/kmz-import';
 import { cn } from '../lib/utils';
+import { toast } from 'sonner';
 
 export function TopBar() {
   const mission = useCurrentMission();
@@ -47,8 +48,14 @@ export function TopBar() {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
+      toast.success('已导出 KMZ', {
+        description: `${mission.name} · ${mission.waypoints.length} 航点`,
+      });
     } catch (err) {
       console.error('[KMZ] export failed', err);
+      toast.error('导出失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
     }
   };
 
@@ -58,18 +65,27 @@ export function TopBar() {
     if (!file) return;
     try {
       const { mission: imported, warnings } = await importKmzToMission(file);
-      if (warnings.length > 0) {
-        console.warn('[KMZ] import warnings:', warnings);
-      }
       // 写入 store：addMission + selectMission
       useMissionsStore.setState((s) => ({
         missions: [imported, ...s.missions],
         currentMissionId: imported.id,
         selectedWaypointId: null,
       }));
+      if (warnings.length > 0) {
+        console.warn('[KMZ] import warnings:', warnings);
+        toast.warning(`导入成功（${warnings.length} 个警告）`, {
+          description: `${imported.name} · ${imported.waypoints.length} 航点；详见 console`,
+        });
+      } else {
+        toast.success('已导入 KMZ', {
+          description: `${imported.name} · ${imported.waypoints.length} 航点`,
+        });
+      }
     } catch (err) {
       console.error('[KMZ] import failed', err);
-      alert(`导入失败: ${err instanceof Error ? err.message : String(err)}`);
+      toast.error('导入失败', {
+        description: err instanceof Error ? err.message : String(err),
+      });
     }
   };
 

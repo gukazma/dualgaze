@@ -37,6 +37,8 @@ interface MissionsState {
   reverseWaypoints: () => void;
   clearWaypoints: () => void;
   selectWaypoint: (id: string | null) => void;
+  /** 拖拽重排：fromIdx 移到 toIdx；重排后 index 字段自动 reindex */
+  reorderWaypoints: (fromIdx: number, toIdx: number) => void;
 
   // waypoint actions CRUD
   addAction: (waypointId: string, type: WaypointActionType) => string | null;
@@ -149,6 +151,17 @@ export const useMissionsStore = create<MissionsState>()(
         clearWaypoints: () => updCurrent((m) => ({ ...m, waypoints: [] })),
 
         selectWaypoint: (id) => set({ selectedWaypointId: id }),
+
+        reorderWaypoints: (fromIdx, toIdx) =>
+          updCurrent((m) => {
+            if (fromIdx === toIdx) return m;
+            if (fromIdx < 0 || fromIdx >= m.waypoints.length) return m;
+            if (toIdx < 0 || toIdx >= m.waypoints.length) return m;
+            const next = [...m.waypoints];
+            const [moved] = next.splice(fromIdx, 1);
+            next.splice(toIdx, 0, moved);
+            return { ...m, waypoints: reindex(next) };
+          }),
 
         addAction: (waypointId, type) => {
           const action = buildAction(type);

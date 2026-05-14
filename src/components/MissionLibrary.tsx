@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Plus, MoreHorizontal, ChevronDown, Sparkles } from 'lucide-react';
+import { toast } from 'sonner';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
 import {
@@ -18,10 +19,16 @@ import {
   DialogTitle,
 } from './ui/dialog';
 import { useMissionsStore } from '../store/missions';
-import { useUiStore } from '../store/ui';
+import { useUiStore, type LibrarySort } from '../store/ui';
 import { DRONE_CATALOG, type Mission } from '../types/mission';
 import { BAVARIA_DEMO_CENTER, BAVARIA_DEMO_OFFSETS, BAVARIA_DEMO_PRESET } from '../lib/demo-mission';
 import { cn } from '../lib/utils';
+
+const SORT_LABELS: Record<LibrarySort, string> = {
+  updated_desc: '时间倒序',
+  updated_asc: '时间正序',
+  name: '名称排序',
+};
 
 function loadBavariaDemo(): void {
   const store = useMissionsStore.getState();
@@ -47,12 +54,36 @@ function loadBavariaDemo(): void {
     globalSpeed: BAVARIA_DEMO_PRESET.speed,
     globalHeight: BAVARIA_DEMO_PRESET.altOffset,
   });
+  toast.success('已加载 Bavaria 演示', {
+    description: `${BAVARIA_DEMO_OFFSETS.length} 航点 · pitch ${BAVARIA_DEMO_PRESET.pitch}°`,
+  });
 }
 
 export function MissionLibrary() {
   const missions = useMissionsStore((s) => s.missions);
   const currentMissionId = useMissionsStore((s) => s.currentMissionId);
   const openCreateModal = useUiStore((s) => s.openCreateModal);
+  const filterDrone = useUiStore((s) => s.libraryFilterDrone);
+  const sortKey = useUiStore((s) => s.librarySort);
+  const setFilterDrone = useUiStore((s) => s.setLibraryFilterDrone);
+  const setSort = useUiStore((s) => s.setLibrarySort);
+
+  // 前端过滤 + 排序
+  const visibleMissions = useMemo(() => {
+    let list = missions;
+    if (filterDrone) list = list.filter((m) => m.droneId === filterDrone);
+    return [...list].sort((a, b) => {
+      switch (sortKey) {
+        case 'updated_asc':
+          return a.updatedAt - b.updatedAt;
+        case 'name':
+          return a.name.localeCompare(b.name, 'zh');
+        case 'updated_desc':
+        default:
+          return b.updatedAt - a.updatedAt;
+      }
+    });
+  }, [missions, filterDrone, sortKey]);
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -62,7 +93,8 @@ export function MissionLibrary() {
           <span className="text-[13px] font-semibold">航线库</span>
           {missions.length > 0 && (
             <span className="rounded-full bg-bg-input px-2 py-0.5 text-[10px] font-semibold text-text-secondary">
-              {missions.length}
+              {visibleMissions.length}
+              {visibleMissions.length !== missions.length && ` / ${missions.length}`}
             </span>
           )}
         </div>
@@ -87,19 +119,76 @@ export function MissionLibrary() {
         </div>
       </div>
 
-      {/* 筛选行（v1 静态 placeholder） */}
+      {/* 筛选 + 排序 */}
       <div className="flex gap-2 border-b border-border-subtle px-4 py-2.5">
-        <FilterButton label="全部机型" />
-        <FilterButton label="时间倒序" />
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="flex flex-1 items-center justify-between rounded-sm border border-border bg-bg px-2 py-1 text-[11px] text-text-secondary hover:border-border/80"
+            >
+              <span>{filterDrone ? DRONE_CATALOG.find((d) => d.id === filterDrone)?.label.replace('DJI Matrice ', 'M') ?? '全部机型' : '全部机型'}</span>
+              <ChevronDown className="h-2.5 w-2.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-[200px] border-border bg-bg-panel">
+            <DropdownMenuItem onClick={() => setFilterDrone(null)} className={cn(!filterDrone && 'text-accent')}>
+              全部机型
+            </DropdownMenuItem>
+            {DRONE_CATALOG.map((d) => (
+              <DropdownMenuItem
+                key={d.id}
+                onClick={() => setFilterDrone(d.id)}
+                className={cn(filterDrone === d.id && 'text-accent')}
+              >
+                {d.label}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="flex flex-1 items-center justify-between rounded-sm border border-border bg-bg px-2 py-1 text-[11px] text-text-secondary hover:border-border/80"
+            >
+              <span>{SORT_LABELS[sortKey]}</span>
+              <ChevronDown className="h-2.5 w-2.5" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-[140px] border-border bg-bg-panel">
+            {(Object.keys(SORT_LABELS) as LibrarySort[]).map((k) => (
+              <DropdownMenuItem
+                key={k}
+                onClick={() => setSort(k)}
+                className={cn(sortKey === k && 'text-accent')}
+              >
+                {SORT_LABELS[k]}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* 列表 */}
       <ScrollArea className="flex-1">
         {missions.length === 0 ? (
           <EmptyState onCreate={openCreateModal} />
+        ) : visibleMissions.length === 0 ? (
+          <div className="flex flex-col items-center justify-center gap-2 px-4 py-10 text-center">
+            <span className="text-[12px] text-text-secondary">无匹配航线</span>
+            <button
+              type="button"
+              onClick={() => setFilterDrone(null)}
+              className="text-[11px] text-accent-cyan hover:underline"
+            >
+              清除筛选
+            </button>
+          </div>
         ) : (
           <div className="flex flex-col gap-1.5 p-2">
-            {missions.map((m) => (
+            {visibleMissions.map((m) => (
               <MissionRow
                 key={m.id}
                 mission={m}
@@ -110,18 +199,6 @@ export function MissionLibrary() {
         )}
       </ScrollArea>
     </div>
-  );
-}
-
-function FilterButton({ label }: { label: string }) {
-  return (
-    <button
-      type="button"
-      className="flex flex-1 items-center justify-between rounded-sm border border-border bg-bg px-2 py-1 text-[11px] text-text-secondary hover:border-border/80"
-    >
-      <span>{label}</span>
-      <ChevronDown className="h-2.5 w-2.5" />
-    </button>
   );
 }
 
@@ -209,12 +286,20 @@ function MissionRow({ mission, active }: MissionRowProps) {
               >
                 重命名
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => duplicateMission(mission.id)}>
+              <DropdownMenuItem
+                onClick={() => {
+                  duplicateMission(mission.id);
+                  toast.success('已复制', { description: `${mission.name} (副本)` });
+                }}
+              >
                 复制
               </DropdownMenuItem>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onClick={() => deleteMission(mission.id)}
+                onClick={() => {
+                  deleteMission(mission.id);
+                  toast('已删除', { description: mission.name });
+                }}
                 className="text-accent-danger focus:text-accent-danger"
               >
                 删除

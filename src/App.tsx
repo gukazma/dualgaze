@@ -10,6 +10,7 @@ import { CreateMissionModal } from './components/CreateMissionModal';
 import { RightSheet } from './components/RightSheet';
 import { PlaybackBar } from './components/PlaybackBar';
 import { FpvWindow } from './components/FpvWindow';
+import { Toaster } from './components/ui/sonner';
 import { useSimulationStore } from './store/simulation';
 
 export function App() {
@@ -54,6 +55,7 @@ export function App() {
       )}
 
       <CreateMissionModal />
+      <Toaster position="bottom-right" richColors closeButton />
     </div>
   );
 }

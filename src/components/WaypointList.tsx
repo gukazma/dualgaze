@@ -1,5 +1,19 @@
 import { useState, useEffect } from 'react';
-import { ArrowUpDown, Trash2, Trash } from 'lucide-react';
+import { ArrowUpDown, GripVertical, Trash2, Trash } from 'lucide-react';
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { ScrollArea } from './ui/scroll-area';
@@ -13,6 +27,21 @@ export function WaypointList() {
   const selectWaypoint = useMissionsStore((s) => s.selectWaypoint);
   const reverseWaypoints = useMissionsStore((s) => s.reverseWaypoints);
   const clearWaypoints = useMissionsStore((s) => s.clearWaypoints);
+  const reorderWaypoints = useMissionsStore((s) => s.reorderWaypoints);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+  );
+
+  const handleDragEnd = (e: DragEndEvent): void => {
+    if (!mission) return;
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const fromIdx = mission.waypoints.findIndex((w) => w.id === active.id);
+    const toIdx = mission.waypoints.findIndex((w) => w.id === over.id);
+    if (fromIdx < 0 || toIdx < 0) return;
+    reorderWaypoints(fromIdx, toIdx);
+  };
 
   if (!mission) {
     return (
@@ -34,16 +63,27 @@ export function WaypointList() {
   return (
     <div className="flex h-full flex-col">
       <ScrollArea className="flex-1">
-        <div className="flex flex-col gap-1.5 p-2.5">
-          {mission.waypoints.map((wp) => (
-            <WaypointCard
-              key={wp.id}
-              waypoint={wp}
-              selected={wp.id === selectedWaypointId}
-              onSelect={() => selectWaypoint(wp.id)}
-            />
-          ))}
-        </div>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={mission.waypoints.map((w) => w.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="flex flex-col gap-1.5 p-2.5">
+              {mission.waypoints.map((wp) => (
+                <SortableWaypointCard
+                  key={wp.id}
+                  waypoint={wp}
+                  selected={wp.id === selectedWaypointId}
+                  onSelect={() => selectWaypoint(wp.id)}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
       </ScrollArea>
       <div className="flex gap-2 border-t border-border-subtle p-2.5">
         <Button
@@ -74,6 +114,32 @@ interface WaypointCardProps {
   waypoint: Waypoint;
   selected: boolean;
   onSelect: () => void;
+}
+
+function SortableWaypointCard(props: WaypointCardProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id: props.waypoint.id });
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.55 : 1,
+  };
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-stretch gap-1.5">
+      <button
+        type="button"
+        {...attributes}
+        {...listeners}
+        className="flex w-4 items-center justify-center rounded text-text-muted hover:text-text-secondary cursor-grab active:cursor-grabbing"
+        title="拖动重排"
+      >
+        <GripVertical className="h-3.5 w-3.5" />
+      </button>
+      <div className="flex-1">
+        <WaypointCard {...props} />
+      </div>
+    </div>
+  );
 }
 
 function WaypointCard({ waypoint, selected, onSelect }: WaypointCardProps) {
