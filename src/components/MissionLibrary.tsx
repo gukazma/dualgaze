@@ -20,7 +20,7 @@ import {
 import { useMissionsStore } from '../store/missions';
 import { useUiStore } from '../store/ui';
 import { DRONE_CATALOG, type Mission } from '../types/mission';
-import { BAVARIA_DEMO_OFFSETS, BAVARIA_DEMO_PRESET, TILESET_CENTER } from '../lib/tileset';
+import { BAVARIA_DEMO_CENTER, BAVARIA_DEMO_OFFSETS, BAVARIA_DEMO_PRESET } from '../lib/demo-mission';
 import { cn } from '../lib/utils';
 
 function loadBavariaDemo(): void {
@@ -31,12 +31,12 @@ function loadBavariaDemo(): void {
     droneId: BAVARIA_DEMO_PRESET.droneId,
     payloadId: BAVARIA_DEMO_PRESET.payloadId,
   });
-  const alt = TILESET_CENTER.alt + BAVARIA_DEMO_PRESET.altOffset;
+  const alt = BAVARIA_DEMO_CENTER.alt + BAVARIA_DEMO_PRESET.altOffset;
   // createMission 已经设了 currentMissionId 为新 id，addWaypoint 直接挂上去
   for (const { dLon, dLat } of BAVARIA_DEMO_OFFSETS) {
     store.addWaypoint({
-      lon: TILESET_CENTER.lon + dLon,
-      lat: TILESET_CENTER.lat + dLat,
+      lon: BAVARIA_DEMO_CENTER.lon + dLon,
+      lat: BAVARIA_DEMO_CENTER.lat + dLat,
       alt,
       speed: BAVARIA_DEMO_PRESET.speed,
       pitch: BAVARIA_DEMO_PRESET.pitch,

@@ -3,16 +3,16 @@ import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
 import { useSimulationStore } from '../../store/simulation';
 import { useCurrentMission } from '../../store/missions';
-import { loadTileset } from '../../lib/tileset';
+import { arcgisWorldImageryOptions } from '../../lib/amap';
 import { wgs84ToCartesian3 } from '../../lib/coord';
 
 /**
  * 独立 Cesium scene 渲染无人机第一人称视角。
  *
- * - 关闭 globe / imagery / atmosphere（FPV 只看 tileset 街景，省 GPU）
- * - SSE 32（远低于主 viewer 的 4），允许低 LOD 渲染
+ * - ArcGIS 卫星底图 + globe + skyBox + skyAtmosphere（drone 视角看真实地表）
  * - 订阅 simulation store 每帧 setView 到 drone 位置/朝向
  * - 取当前 waypoint 的 gimbal pitch 作为相机俯仰
+ * - 锁相机：不接受用户拖拽/缩放，纯播放
  */
 export function FpvViewer() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -24,6 +24,8 @@ export function FpvViewer() {
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+
+    const imagery = new Cesium.UrlTemplateImageryProvider(arcgisWorldImageryOptions());
 
     const viewer = new Cesium.Viewer(container, {
       timeline: false,
@@ -37,12 +39,13 @@ export function FpvViewer() {
       infoBox: false,
       selectionIndicator: false,
       requestRenderMode: false,
-      baseLayer: false as unknown as Cesium.ImageryLayer,
-      skyBox: false,
-      skyAtmosphere: false,
+      baseLayer: new Cesium.ImageryLayer(imagery),
     });
-    viewer.scene.globe.show = false;
-    viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#05080f');
+    viewer.scene.globe.show = true;
+    viewer.scene.globe.baseColor = Cesium.Color.fromCssColorString('#0c0d10');
+    if (viewer.scene.skyBox) viewer.scene.skyBox.show = true;
+    if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = true;
+    viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#0c0d10');
     // 完全锁定相机：FPV 只接受 store 驱动
     const ctrl = viewer.scene.screenSpaceCameraController;
     ctrl.enableRotate = false;
@@ -63,10 +66,6 @@ export function FpvViewer() {
     if (import.meta.env.DEV) {
       (window as unknown as { __fpvViewer?: Cesium.Viewer }).__fpvViewer = viewer;
     }
-
-    loadTileset(viewer, { maximumScreenSpaceError: 32, pointSize: 4 }).catch((err) => {
-      console.error('[FpvViewer] tileset load failed', err);
-    });
 
     return () => {
       viewer.destroy();
