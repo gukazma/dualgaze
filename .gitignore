@@ -1,0 +1,26 @@
+# Node
+node_modules/
+*.log
+
+# Build
+dist/
+*.tsbuildinfo
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# Playwright (调试用，不入库)
+.playwright-mcp/
+*.png
+
+# Real-world point cloud data —— 用户自己的摄影测量产出，按需自行 commit
+public/datas/pnts/*
+!public/datas/pnts/.gitkeep

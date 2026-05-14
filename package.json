@@ -1,0 +1,23 @@
+{
+  "name": "dualgaze",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "DualGaze · 点云贴近航线规划 (v0 起步：在 pnts 上画多边形)",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "cesium": "^1.124.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.2",
+    "vite": "^5.4.21",
+    "vite-plugin-cesium": "^1.2.23"
+  },
+  "packageManager": "pnpm@10.8.1",
+  "engines": { "node": ">=20" }
+}
