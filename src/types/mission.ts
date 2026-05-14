@@ -116,6 +116,11 @@ export interface Waypoint {
 }
 
 export type HeightMode = 'WGS84' | 'relativeToStartPoint' | 'realTimeFollowSurface';
+export type FlyToWaylineMode = 'safely' | 'pointToPoint';
+export type FinishAction = 'goHome' | 'autoLand' | 'hover' | 'backToStart';
+export type RCLostAction = 'goBack' | 'hover' | 'landing';
+export type ExitOnRCLost = 'executeLostAction' | 'goContinue';
+export type GlobalCameraAction = 'none' | 'takePhoto' | 'startRecord';
 
 export interface Mission {
   id: string;
@@ -130,9 +135,37 @@ export interface Mission {
   globalHeight: number;
   /** 高度模式 */
   heightMode: HeightMode;
+  /** 安全起飞高度 m（执行任务前先爬升到此高度才进入航线，DJI WPML takeOffSecurityHeight） */
+  takeOffSecurityHeight: number;
+  /** 飞向首航点模式：安全模式（先到首航点正上方再下降）/ 点对点直飞 */
+  flyToWaylineMode: FlyToWaylineMode;
+  /** 完成动作：返航 / 降落 / 悬停 / 回首航点 */
+  finishAction: FinishAction;
+  /** 失控动作：返航 / 悬停 / 降落 */
+  executeRCLostAction: RCLostAction;
+  /** 失联后行为：执行失联动作 / 继续航线 */
+  exitOnRCLost: ExitOnRCLost;
+  /** 是否闭合环线（末点 → 首点） */
+  isClosedLoop: boolean;
+  /** 全局相机动作（贯穿航线）：无 / 拍照 / 开始录像 */
+  globalAction: GlobalCameraAction;
   createdAt: number;
   updatedAt: number;
 }
+
+/** Mission 默认值集中点（createBlankMission 和 persist migration 共用） */
+export const MISSION_DEFAULTS = {
+  globalSpeed: 5,
+  globalHeight: 60,
+  heightMode: 'relativeToStartPoint' as HeightMode,
+  takeOffSecurityHeight: 20,
+  flyToWaylineMode: 'safely' as FlyToWaylineMode,
+  finishAction: 'goHome' as FinishAction,
+  executeRCLostAction: 'goBack' as RCLostAction,
+  exitOnRCLost: 'executeLostAction' as ExitOnRCLost,
+  isClosedLoop: true,
+  globalAction: 'none' as GlobalCameraAction,
+} as const;
 
 // ---------- Factory ----------
 
@@ -153,12 +186,18 @@ export function createBlankMission(init: {
     droneId: init.droneId,
     payloadId: init.payloadId,
     waypoints: [],
-    globalSpeed: 5,
-    globalHeight: 60,
-    heightMode: 'relativeToStartPoint',
+    ...MISSION_DEFAULTS,
     createdAt: now,
     updatedAt: now,
   };
+}
+
+/** persist v1 → v2 迁移：把缺失的 MissionConfig 字段补默认值 */
+export function migrateMissionToLatest(m: Partial<Mission> & Pick<Mission, 'id' | 'name' | 'type' | 'droneId' | 'payloadId' | 'waypoints' | 'createdAt' | 'updatedAt'>): Mission {
+  return {
+    ...MISSION_DEFAULTS,
+    ...m,
+  } as Mission;
 }
 
 export function createWaypoint(init: {

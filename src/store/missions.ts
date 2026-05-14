@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import {
   createBlankMission,
   createWaypoint as buildWaypoint,
+  migrateMissionToLatest,
   type Mission,
   type MissionType,
   type Waypoint,
@@ -144,12 +145,20 @@ export const useMissionsStore = create<MissionsState>()(
     },
     {
       name: 'dualgaze.missions',
-      version: 1,
+      version: 2,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         missions: state.missions,
         currentMissionId: state.currentMissionId,
       }),
+      migrate: (persisted, _version) => {
+        const p = persisted as { missions?: unknown; currentMissionId?: string | null } | undefined;
+        if (!p || !Array.isArray(p.missions)) return p as never;
+        return {
+          ...p,
+          missions: p.missions.map((m) => migrateMissionToLatest(m as Parameters<typeof migrateMissionToLatest>[0])),
+        } as never;
+      },
     },
   ),
 );

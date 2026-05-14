@@ -1,5 +1,6 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from './ui/tabs';
 import { WaypointList } from './WaypointList';
+import { MissionConfigPanel } from './MissionConfigPanel';
 import { useCurrentMission } from '../store/missions';
 import { useUiStore } from '../store/ui';
 
@@ -53,7 +54,7 @@ export function RightSheet() {
             <WaypointList />
           </TabsContent>
           <TabsContent value="config" className="mt-0 flex-1 overflow-hidden">
-            <Placeholder note="M4 实现：高度模式 / 失控动作 / 完成动作 / 起飞安全高度" />
+            <MissionConfigPanel />
           </TabsContent>
           <TabsContent value="actions" className="mt-0 flex-1 overflow-hidden">
             <Placeholder note="M5 实现：每航点动作组（拍照 / 录像 / 云台旋转 / hover）" />
