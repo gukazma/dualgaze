@@ -1,16 +1,17 @@
 import * as Cesium from 'cesium';
 import 'cesium/Build/Cesium/Widgets/widgets.css';
-import { amapSatelliteImageryOptions } from './lib/amap';
+import { arcgisWorldImageryOptions } from './lib/amap';
 
 // 关掉 Cesium ion 默认 token —— 不用 ion 资产
 Cesium.Ion.defaultAccessToken = import.meta.env.VITE_CESIUM_ION_TOKEN ?? '';
 
 export function createViewer(container: HTMLElement): Cesium.Viewer {
-  // M1：以高德卫星瓦片为 baseLayer
-  const amap = new Cesium.UrlTemplateImageryProvider(amapSatelliteImageryOptions());
+  // ArcGIS World Imagery：免 token、WGS84 原生、全球 z=19 真卫星
+  // （AMap 公开端点 z=18 封顶 + 境外不覆盖 → 不适合 demo）
+  const imagery = new Cesium.UrlTemplateImageryProvider(arcgisWorldImageryOptions());
 
   const viewer = new Cesium.Viewer(container, {
-    baseLayer: new Cesium.ImageryLayer(amap),
+    baseLayer: new Cesium.ImageryLayer(imagery),
     timeline: false,
     animation: false,
     homeButton: false,

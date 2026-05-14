@@ -1,23 +1,23 @@
 /**
- * WGS84 ↔ GCJ-02 坐标转换（"火星坐标系"）。
+ * 坐标系适配层。
  *
- * GCJ-02 是中国国家测绘局对 WGS84 加密的坐标系，AMap / 腾讯 / 百度（之上又加 BD-09）等
- * 中国境内地图服务全部用 GCJ-02 显示。WGS84 数据（GPS / DJI 输出 / KMZ 标准）渲染到
- * AMap 上不修正会偏移 50-500m。
+ * 当前 baseLayer = ArcGIS World Imagery（WGS84 原生）→ 不需要 GCJ-02 偏移修正，
+ * `wgs84ToCartesian3` / `cartesian3ToWgs84` 都是直 passthrough。
  *
- * 偏移算法基于 Krasovsky 1940 椭球 + 公开偏移多项式，多年间已在开源项目中验证。
- * 反向（GCJ-02 → WGS84）用迭代法，10 步内可收敛到 < 1e-9°。
- *
- * 注意：境外（中国陆地 bounding box 外）不做任何偏移 —— Bavaria 点云在德国，
- * 不应被转换。
+ * GCJ-02 偏移算法（wgs84ToGcj02 / gcj02ToWgs84）仍然 export 出来，
+ * 万一以后切回 AMap 卫星 / 腾讯地图等 GCJ-02 底图，把
+ * `BASE_IS_GCJ02 = true` 就能恢复修正路径。
  */
 import * as Cesium from 'cesium';
 
-// Krasovsky 1940 椭球长半轴 (m) 与第一偏心率平方
+/** 切换底图时改这个：用 GCJ-02 底图（AMap/腾讯）= true，用 WGS84 底图（ArcGIS/OSM/Bing）= false */
+const BASE_IS_GCJ02 = false;
+
+// ===== GCJ-02 偏移算法（仅在 BASE_IS_GCJ02=true 时生效）=====
+
 const KRASOVSKY_A = 6378245.0;
 const KRASOVSKY_EE = 0.00669342162296594323;
 
-// 中国陆地范围（粗略 bbox，与 AMap 实际覆盖一致）
 const CHINA_BBOX = { minLon: 72.004, maxLon: 137.8347, minLat: 0.8293, maxLat: 55.8271 };
 
 export function isInChina(lon: number, lat: number): boolean {
@@ -56,7 +56,6 @@ function transformLng(x: number, y: number): number {
   return ret;
 }
 
-/** WGS84 → GCJ-02. 境外原样返回。 */
 export function wgs84ToGcj02(lon: number, lat: number): [number, number] {
   if (!isInChina(lon, lat)) return [lon, lat];
   let dLat = transformLat(lon - 105.0, lat - 35.0);
@@ -70,7 +69,6 @@ export function wgs84ToGcj02(lon: number, lat: number): [number, number] {
   return [lon + dLon, lat + dLat];
 }
 
-/** GCJ-02 → WGS84. 用 10 步迭代逼近 (< 1e-9° 收敛)。境外原样返回。 */
 export function gcj02ToWgs84(gcjLon: number, gcjLat: number): [number, number] {
   if (!isInChina(gcjLon, gcjLat)) return [gcjLon, gcjLat];
   let wgsLon = gcjLon;
@@ -86,9 +84,12 @@ export function gcj02ToWgs84(gcjLon: number, gcjLat: number): [number, number] {
   return [wgsLon, wgsLat];
 }
 
+// ===== Cesium 适配入口 =====
+
 /**
- * WGS84 → Cesium Cartesian3，自动 GCJ-02 修正后才转 ECEF。
- * 这是航点 / drone 位置等所有 WGS84 数据落到 AMap 地图上的标准入口。
+ * WGS84 (lon, lat, alt) → Cesium Cartesian3。
+ * - BASE_IS_GCJ02=true：自动应用 wgs84→gcj02 偏移修正
+ * - BASE_IS_GCJ02=false：直接 fromDegrees，无偏移
  */
 export function wgs84ToCartesian3(
   lon: number,
@@ -96,20 +97,27 @@ export function wgs84ToCartesian3(
   alt: number = 0,
   result?: Cesium.Cartesian3,
 ): Cesium.Cartesian3 {
-  const [gcjLon, gcjLat] = wgs84ToGcj02(lon, lat);
-  return Cesium.Cartesian3.fromDegrees(gcjLon, gcjLat, alt, undefined, result);
+  if (BASE_IS_GCJ02) {
+    const [gcjLon, gcjLat] = wgs84ToGcj02(lon, lat);
+    return Cesium.Cartesian3.fromDegrees(gcjLon, gcjLat, alt, undefined, result);
+  }
+  return Cesium.Cartesian3.fromDegrees(lon, lat, alt, undefined, result);
 }
 
 /**
- * Cesium Cartesian3 → WGS84 (lon, lat, alt)，认为 Cartesian3 是 GCJ-02-投影后的 ECEF。
- * 在用户点击地图后还原回真实 WGS84 坐标。
+ * Cesium Cartesian3 → WGS84 (lon, lat, alt)。
+ * - BASE_IS_GCJ02=true：Cartesian3 视为 GCJ-02 投影后的 ECEF，再反向转 WGS84
+ * - BASE_IS_GCJ02=false：直接 Cartographic.fromCartesian 拿 WGS84
  */
 export function cartesian3ToWgs84(
   cart: Cesium.Cartesian3,
 ): { lon: number; lat: number; alt: number } {
   const carto = Cesium.Cartographic.fromCartesian(cart);
-  const gcjLon = Cesium.Math.toDegrees(carto.longitude);
-  const gcjLat = Cesium.Math.toDegrees(carto.latitude);
-  const [wgsLon, wgsLat] = gcj02ToWgs84(gcjLon, gcjLat);
-  return { lon: wgsLon, lat: wgsLat, alt: carto.height };
+  const rawLon = Cesium.Math.toDegrees(carto.longitude);
+  const rawLat = Cesium.Math.toDegrees(carto.latitude);
+  if (BASE_IS_GCJ02) {
+    const [wgsLon, wgsLat] = gcj02ToWgs84(rawLon, rawLat);
+    return { lon: wgsLon, lat: wgsLat, alt: carto.height };
+  }
+  return { lon: rawLon, lat: rawLat, alt: carto.height };
 }
