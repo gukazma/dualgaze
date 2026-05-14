@@ -10,12 +10,15 @@ import { CreateMissionModal } from './components/CreateMissionModal';
 import { RightSheet } from './components/RightSheet';
 import { PlaybackBar } from './components/PlaybackBar';
 import { FpvWindow } from './components/FpvWindow';
+import { ViewToggle } from './components/ViewToggle';
 import { Toaster } from './components/ui/sonner';
+import { useMapViewSync } from './features/cesium/useMapViewSync';
 import { useSimulationStore } from './store/simulation';
 
 export function App() {
   useSimulationLoop();
   useFlyToMission();
+  useMapViewSync();
   const mode = useSimulationStore((s) => s.mode);
   const isSimulating = mode === 'simulating';
 
@@ -33,6 +36,7 @@ export function App() {
           <WaypointLayer />
           <DroneLayer />
           <FrustumLayer />
+          {!isSimulating && <ViewToggle />}
           {isSimulating && <FpvWindow />}
         </div>
 
