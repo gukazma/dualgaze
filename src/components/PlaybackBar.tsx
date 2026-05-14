@@ -1,10 +1,13 @@
 import { Pause, Play, Square } from 'lucide-react';
 import { Button } from './ui/button';
-import { useCurrentMission } from '../store/missions';
+import { Slider } from './ui/slider';
+import { useCurrentMission, useMissionsStore } from '../store/missions';
 import { useSimulationStore, type SimSpeed } from '../store/simulation';
 import { cn } from '../lib/utils';
 
 const SPEED_OPTIONS: SimSpeed[] = [1, 2, 5, 10];
+const MIN_FLIGHT_SPEED = 1;
+const MAX_FLIGHT_SPEED = 15;
 
 export function PlaybackBar() {
   const mission = useCurrentMission();
@@ -13,22 +16,28 @@ export function PlaybackBar() {
   const totalMs = useSimulationStore((s) => s.totalDurationMs);
   const speed = useSimulationStore((s) => s.speed);
   const reachedIds = useSimulationStore((s) => s.reachedWaypointIds);
+  const currentSegmentIndex = useSimulationStore((s) => s.currentSegmentIndex);
 
   const play = useSimulationStore((s) => s.play);
   const pause = useSimulationStore((s) => s.pause);
   const exitSim = useSimulationStore((s) => s.exitSim);
   const setSpeed = useSimulationStore((s) => s.setSpeed);
+  const updateMission = useMissionsStore((s) => s.updateMission);
 
   if (!mission) return null;
 
   const progress = totalMs > 0 ? Math.min(elapsedMs / totalMs, 1) : 0;
-  const waypointPositions =
-    mission.waypoints.length < 2
-      ? []
-      : computeWaypointTimePositions(mission.waypoints, totalMs);
+  const flightSpeed = mission.globalSpeed;
+
+  const handleFlightSpeedChange = (values: number[]): void => {
+    const v = values[0];
+    if (!Number.isFinite(v)) return;
+    updateMission(mission.id, { globalSpeed: Math.max(MIN_FLIGHT_SPEED, Math.min(MAX_FLIGHT_SPEED, v)) });
+  };
 
   return (
-    <footer className="flex h-16 items-center gap-4 border-t border-border-subtle bg-bg-surface px-5">
+    <footer className="flex h-20 items-center gap-4 border-t border-border-subtle bg-bg-surface px-5">
+      {/* 左：play/pause/stop */}
       <div className="flex items-center gap-2">
         <Button
           size="icon"
@@ -47,13 +56,14 @@ export function PlaybackBar() {
         </Button>
       </div>
 
+      {/* 中：时间 + waypoint 标记 + 进度条 */}
       <div className="flex flex-1 flex-col gap-1.5">
         <div className="flex items-center justify-between">
           <span className="text-[11px] font-semibold">{formatMs(elapsedMs)}</span>
           <div className="flex items-center gap-3.5">
             {mission.waypoints.map((wp, idx) => {
               const reached = reachedIds.has(wp.id);
-              const active = !reached && idx === useSimulationStore.getState().currentSegmentIndex + 1;
+              const active = !reached && idx === currentSegmentIndex + 1;
               return (
                 <span key={wp.id} className="flex items-center gap-1">
                   <span
@@ -85,60 +95,59 @@ export function PlaybackBar() {
           <span className="text-[11px] font-semibold text-text-secondary">{formatMs(totalMs)}</span>
         </div>
         <div className="relative h-2 w-full overflow-hidden rounded-full bg-bg-input">
-          <div
-            className="absolute inset-y-0 left-0 bg-accent-cyan"
-            style={{ width: `${progress * 100}%` }}
-          />
-          {/* waypoint markers */}
-          {waypointPositions.map((tp, idx) => {
-            const reached = reachedIds.has(mission.waypoints[idx].id);
-            return (
-              <span
-                key={mission.waypoints[idx].id}
-                className={cn(
-                  'absolute -translate-x-1/2 rounded-full ring-2 ring-bg',
-                  reached ? 'bg-accent-cyan' : 'bg-bg-input',
-                )}
-                style={{
-                  left: `${tp * 100}%`,
-                  top: '50%',
-                  width: 10,
-                  height: 10,
-                  marginTop: -5,
-                }}
-              />
-            );
-          })}
-          {/* playhead */}
+          <div className="absolute inset-y-0 left-0 bg-accent-cyan" style={{ width: `${progress * 100}%` }} />
           <span
             className="absolute -translate-x-1/2 rounded-full bg-accent-cyan ring-2 ring-bg"
-            style={{
-              left: `${progress * 100}%`,
-              top: '50%',
-              width: 12,
-              height: 12,
-              marginTop: -6,
-            }}
+            style={{ left: `${progress * 100}%`, top: '50%', width: 12, height: 12, marginTop: -6 }}
           />
         </div>
       </div>
 
-      <div className="flex items-center overflow-hidden rounded-md border border-border bg-bg">
-        {SPEED_OPTIONS.map((s) => (
-          <button
-            key={s}
-            type="button"
-            onClick={() => setSpeed(s)}
-            className={cn(
-              'flex h-7 w-10 items-center justify-center text-[11px] font-semibold transition',
-              s === speed
-                ? 'bg-bg-input text-text-primary'
-                : 'text-text-secondary hover:bg-bg-surface',
-            )}
-          >
-            {s}x
-          </button>
-        ))}
+      {/* 右：倍速 + 飞行速度 */}
+      <div className="flex items-end gap-5">
+        {/* 倍速 */}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-[9px] font-semibold uppercase tracking-wider text-text-muted">倍速</span>
+          <div className="flex items-center overflow-hidden rounded-md border border-border bg-bg">
+            {SPEED_OPTIONS.map((s) => (
+              <button
+                key={s}
+                type="button"
+                onClick={() => setSpeed(s)}
+                className={cn(
+                  'flex h-7 w-9 items-center justify-center text-[11px] font-semibold transition',
+                  s === speed
+                    ? 'bg-bg-input text-text-primary'
+                    : 'text-text-secondary hover:bg-bg-surface',
+                )}
+              >
+                {s}x
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* 飞行速度 */}
+        <div className="flex w-[200px] flex-col gap-1.5">
+          <div className="flex items-baseline justify-between">
+            <span className="text-[9px] font-semibold uppercase tracking-wider text-text-muted">飞行速度</span>
+            <div className="flex items-baseline gap-1">
+              <span className="text-[13px] font-bold text-accent-cyan">{flightSpeed.toFixed(1)}</span>
+              <span className="text-[9px] font-semibold text-text-secondary">m/s</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2.5">
+            <Slider
+              value={[flightSpeed]}
+              onValueChange={handleFlightSpeedChange}
+              min={MIN_FLIGHT_SPEED}
+              max={MAX_FLIGHT_SPEED}
+              step={0.1}
+              className="flex-1"
+            />
+            <span className="text-[9px] text-text-muted">{MIN_FLIGHT_SPEED} · {MAX_FLIGHT_SPEED}</span>
+          </div>
+        </div>
       </div>
     </footer>
   );
@@ -149,15 +158,4 @@ function formatMs(ms: number): string {
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
   return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-}
-
-/** 算每个 waypoint 在 totalMs 中的归一化时间位置（用于 progress bar 上的小标记） */
-function computeWaypointTimePositions(
-  waypoints: import('../types/mission').Waypoint[],
-  totalMs: number,
-): number[] {
-  if (totalMs <= 0 || waypoints.length < 2) return waypoints.map(() => 0);
-  // 简单版本：按等距分布；真实的时间分布要重新算每段 duration —— 暂时近似
-  // (与 SimulationLoop 的 buildSegments 算法一致才精确；先够用)
-  return waypoints.map((_, i) => i / (waypoints.length - 1));
 }
