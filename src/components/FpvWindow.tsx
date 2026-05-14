@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Maximize2, Minimize2, X, Radio } from 'lucide-react';
 import { FpvViewer } from '../features/fpv/FpvViewer';
 import { useSimulationStore } from '../store/simulation';
@@ -6,36 +6,57 @@ import { useCurrentMission } from '../store/missions';
 import { PAYLOAD_CATALOG } from '../types/mission';
 import { cn } from '../lib/utils';
 
-const W = 380;
-const H = 280;
+// Pencil 原型基准尺寸（FrameC EoDgA：400×260，x=404 y=16 在 820 宽 MapArea 中 → 右贴边 16px）
+const W = 400;
+const H = 260;
+const MARGIN = 16;
 const TITLE_H = 32;
 const HUD_H = 28;
 
 /**
- * 浮窗：右上拖动 + 最小化 + 关闭。
- * - 关闭后留一个小重启按钮（不真销毁 ref）
- * - 最小化只折叠 body，标题栏 + 拖动手柄保留
- * - 模拟模式才挂载（App.tsx 控制）
+ * 右上浮窗（与原型对齐）。位置基准是 FPV 自己的 offsetParent（CesiumViewer 父级 .relative div），
+ * 不是 window —— 之前用 window.innerWidth 会把窗推到右 aside 后面被裁掉。
+ *
+ * - 默认 right=16 top=16 贴中央容器右上
+ * - 用户拖动后切到 absolute left/top 模式
+ * - 最小化只折叠 body 保留标题栏，关闭隐藏并露重启按钮
  */
 export function FpvWindow() {
   const droneState = useSimulationStore((s) => s.droneState);
   const mission = useCurrentMission();
   const payload = mission ? PAYLOAD_CATALOG.find((p) => p.id === mission.payloadId) : null;
 
-  const [pos, setPos] = useState(() => ({
-    x: typeof window !== 'undefined' ? window.innerWidth - W - 360 - 24 : 24,
-    y: 72,
-  }));
+  // null = 未拖动过，用 right/top 默认；拖动后切到 {x,y}
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [visible, setVisible] = useState(true);
   const dragRef = useRef<{ dx: number; dy: number } | null>(null);
+  const winRef = useRef<HTMLDivElement>(null);
+  // 浮窗 offsetParent 的 client 尺寸（用于钳制拖动范围）
+  const [parentSize, setParentSize] = useState({ w: 1024, h: 768 });
+
+  useLayoutEffect(() => {
+    const update = (): void => {
+      const parent = winRef.current?.offsetParent as HTMLElement | null;
+      if (!parent) return;
+      setParentSize({ w: parent.clientWidth, h: parent.clientHeight });
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
 
   useEffect(() => {
     const onMove = (e: MouseEvent): void => {
       if (!dragRef.current) return;
+      const parent = winRef.current?.offsetParent as HTMLElement | null;
+      if (!parent) return;
+      const rect = parent.getBoundingClientRect();
+      const relX = e.clientX - rect.left - dragRef.current.dx;
+      const relY = e.clientY - rect.top - dragRef.current.dy;
       setPos({
-        x: Math.max(0, Math.min(window.innerWidth - 80, e.clientX - dragRef.current.dx)),
-        y: Math.max(0, Math.min(window.innerHeight - 50, e.clientY - dragRef.current.dy)),
+        x: Math.max(0, Math.min(rect.width - 80, relX)),
+        y: Math.max(0, Math.min(rect.height - 40, relY)),
       });
     };
     const onUp = (): void => {
@@ -55,26 +76,41 @@ export function FpvWindow() {
       <button
         type="button"
         onClick={() => setVisible(true)}
-        className="absolute right-6 top-20 z-30 flex items-center gap-1.5 rounded-md border border-border bg-bg-surface px-3 py-1.5 text-[11px] font-semibold text-text-secondary shadow-lg hover:text-text-primary"
+        className="absolute right-4 top-4 z-30 flex items-center gap-1.5 rounded-md border border-border bg-bg-surface px-3 py-1.5 text-[11px] font-semibold text-text-secondary shadow-lg hover:text-text-primary"
       >
         <Radio className="h-3 w-3 text-accent-cyan" /> 打开 FPV
       </button>
     );
   }
 
+  // 默认 right/top 贴边；拖动后切 left/top。宽度溢出（容器 < W+32）时收缩
+  const effectiveW = Math.min(W, Math.max(280, parentSize.w - MARGIN * 2));
+  const posStyle: React.CSSProperties =
+    pos === null
+      ? { right: MARGIN, top: MARGIN }
+      : { left: pos.x, top: pos.y };
+
   return (
     <div
+      ref={winRef}
       className="absolute z-30 overflow-hidden rounded-lg border border-border-subtle bg-bg-surface shadow-2xl"
       style={{
-        left: pos.x,
-        top: pos.y,
-        width: W,
+        ...posStyle,
+        width: effectiveW,
         height: collapsed ? TITLE_H : H,
       }}
     >
       <div
         onMouseDown={(e) => {
-          dragRef.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
+          const parent = winRef.current?.offsetParent as HTMLElement | null;
+          if (!parent) return;
+          const rect = parent.getBoundingClientRect();
+          const winRect = winRef.current!.getBoundingClientRect();
+          // 切到 left/top：算当前真实 left/top 作为锚点
+          const curLeft = winRect.left - rect.left;
+          const curTop = winRect.top - rect.top;
+          dragRef.current = { dx: e.clientX - rect.left - curLeft, dy: e.clientY - rect.top - curTop };
+          setPos({ x: curLeft, y: curTop });
           document.body.style.userSelect = 'none';
         }}
         className="flex h-8 cursor-move select-none items-center justify-between border-b border-border-subtle bg-bg-input px-2.5 text-[11px]"
