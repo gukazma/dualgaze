@@ -79,7 +79,7 @@ export function FpvViewer() {
     const COLOR_PATH_DONE = Cesium.Color.fromCssColorString('#00d2c0');
     const COLOR_POLY_OUTLINE = Cesium.Color.fromCssColorString('#ffd24a').withAlpha(0.9);
 
-    // 完整 mission 路径（半透明 cyan）+ depthFailMaterial 让线穿过地形可见
+    // 完整 mission 路径（飞行高度，跟 drone 同 alt）
     ds.entities.add({
       polyline: {
         positions: new Cesium.CallbackProperty(() => {
@@ -91,7 +91,6 @@ export function FpvViewer() {
         }, false),
         width: 5,
         material: COLOR_PATH,
-        depthFailMaterial: COLOR_PATH,
         arcType: Cesium.ArcType.GEODESIC,
         clampToGround: false,
       },
@@ -117,7 +116,6 @@ export function FpvViewer() {
         }, false),
         width: 7,
         material: COLOR_PATH_DONE,
-        depthFailMaterial: COLOR_PATH_DONE,
         arcType: Cesium.ArcType.GEODESIC,
         clampToGround: false,
       },
@@ -139,7 +137,7 @@ export function FpvViewer() {
         const e = ds.entities.add({
           position: wgs84ToCartesian3(wp.lon, wp.lat, wp.alt),
           point: {
-            pixelSize: 8,
+            pixelSize: 10,
             color: Cesium.Color.fromCssColorString('#00d2c0'),
             outlineColor: Cesium.Color.fromCssColorString('#0c0d10'),
             outlineWidth: 2,
@@ -175,9 +173,8 @@ export function FpvViewer() {
           if (m.polygon.length >= 3) arr.push(arr[0]); // 闭合
           return arr;
         }, false),
-        width: 2,
+        width: 3,
         material: COLOR_POLY_OUTLINE,
-        depthFailMaterial: COLOR_POLY_OUTLINE,
         arcType: Cesium.ArcType.GEODESIC,
         clampToGround: false,
       },
@@ -191,6 +188,10 @@ export function FpvViewer() {
   }, []);
 
   // 订阅 drone 位置 → setView
+  // 注意：纯 drone POV (camera 在 drone 位置 + waypoint pitch) 在路径与 drone 同高度时，
+  // 整条路径都在视野上方（camera FOV 之外），用户根本看不到飞行轨迹。
+  // 改成"伴飞俯视"模式：相机比 drone 高 30m + 固定 pitch=-75°，
+  // 用户看到下方完整路径 + drone 当前位置，比真 POV 实用得多。
   useEffect(() => {
     const apply = (): void => {
       const v = viewerRef.current;
@@ -198,17 +199,11 @@ export function FpvViewer() {
       const state = useSimulationStore.getState();
       const d = state.droneState;
       if (!d) return;
-      // 取当前段终点 waypoint 的云台俯仰（相机朝下/朝前），找不到就 -10°
-      const m = missionRef.current;
-      const segIdx = state.currentSegmentIndex;
-      const wps = m ? effectiveWaypoints(m) : [];
-      const toWp = wps[segIdx + 1] ?? wps[segIdx];
-      const pitchDeg = toWp?.pitch ?? -10;
       v.camera.setView({
-        destination: wgs84ToCartesian3(d.lon, d.lat, d.alt),
+        destination: wgs84ToCartesian3(d.lon, d.lat, d.alt + 30),
         orientation: {
           heading: Cesium.Math.toRadians(d.heading),
-          pitch: Cesium.Math.toRadians(pitchDeg),
+          pitch: Cesium.Math.toRadians(-75),
           roll: 0,
         },
       });
