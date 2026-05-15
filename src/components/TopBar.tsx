@@ -8,6 +8,7 @@ import { prepareSimulation } from '../features/simulation/SimulationLoop';
 import { DRONE_CATALOG, PAYLOAD_CATALOG } from '../types/mission';
 import { exportMissionToKmz } from '../lib/kmz-export';
 import { importKmzToMission } from '../lib/kmz-import';
+import { effectiveWaypoints } from '../features/simulation/SimulationLoop';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
 
@@ -22,7 +23,8 @@ export function TopBar() {
   const drone = mission ? DRONE_CATALOG.find((d) => d.id === mission.droneId) : null;
   const payload = mission ? PAYLOAD_CATALOG.find((p) => p.id === mission.payloadId) : null;
 
-  const canSimulate = !!mission && mission.waypoints.length >= 2 && mode === 'editing';
+  const canSimulate =
+    !!mission && effectiveWaypoints(mission).length >= 2 && mode === 'editing';
   const isSimulating = mode === 'simulating';
 
   const handleSimClick = (): void => {
@@ -49,7 +51,7 @@ export function TopBar() {
       a.remove();
       URL.revokeObjectURL(url);
       toast.success('已导出 KMZ', {
-        description: `${mission.name} · ${mission.waypoints.length} 航点`,
+        description: `${mission.name} · ${effectiveWaypoints(mission).length} 航点`,
       });
     } catch (err) {
       console.error('[KMZ] export failed', err);
@@ -167,7 +169,7 @@ export function TopBar() {
           variant="outline"
           className="gap-1.5"
           onClick={() => void handleExportKmz()}
-          disabled={isSimulating || !mission || mission.waypoints.length < 1}
+          disabled={isSimulating || !mission || effectiveWaypoints(mission).length < 1}
         >
           <Upload className="h-3 w-3" />
           导出 KMZ

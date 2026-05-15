@@ -28,7 +28,7 @@ export function useSimulationLoop(): void {
         return;
       }
       const m = missionRef.current;
-      if (!m || m.waypoints.length < 2) {
+      if (!m || effectiveWaypoints(m).length < 2) {
         lastTs = null;
         raf = requestAnimationFrame(step);
         return;
@@ -99,10 +99,23 @@ interface Segment {
   durationMs: number;
 }
 
+/**
+ * 取 mission 实际飞行航点：
+ *   - mapping → scanPath（多边形扫描算出来的）
+ *   - patrol → waypoints
+ *
+ * Sim 全链路（buildSegments / DroneLayer / WaypointLayer reach 标记 / 视锥）
+ * 都用这个 helper，mapping 跟 patrol 共用一套播放代码。
+ */
+export function effectiveWaypoints(mission: Mission): Waypoint[] {
+  if (mission.type === 'mapping') return mission.scanPath ?? [];
+  return mission.waypoints;
+}
+
 /** 按 mission.globalSpeed (或 waypoint.speed 覆盖) 算每段耗时 */
 function buildSegments(mission: Mission): Segment[] {
   const out: Segment[] = [];
-  const wps = mission.waypoints;
+  const wps = effectiveWaypoints(mission);
   for (let i = 0; i < wps.length - 1; i++) {
     const a = wps[i];
     const b = wps[i + 1];
@@ -119,9 +132,10 @@ export function totalMissionDurationMs(mission: Mission): number {
 }
 
 export function missionStartState(mission: Mission): DroneState | null {
-  if (mission.waypoints.length === 0) return null;
-  const first = mission.waypoints[0];
-  const second = mission.waypoints[1];
+  const wps = effectiveWaypoints(mission);
+  if (wps.length === 0) return null;
+  const first = wps[0];
+  const second = wps[1];
   return {
     lon: first.lon,
     lat: first.lat,
@@ -133,13 +147,9 @@ export function missionStartState(mission: Mission): DroneState | null {
 /** 在 RightSheet / store 外部需要时用：拿当前 mission 的总距离（米） */
 export function missionTotalDistanceMeters(mission: Mission): number {
   let d = 0;
-  for (let i = 0; i < mission.waypoints.length - 1; i++) {
-    d += haversineMeters(
-      mission.waypoints[i].lon,
-      mission.waypoints[i].lat,
-      mission.waypoints[i + 1].lon,
-      mission.waypoints[i + 1].lat,
-    );
+  const wps = effectiveWaypoints(mission);
+  for (let i = 0; i < wps.length - 1; i++) {
+    d += haversineMeters(wps[i].lon, wps[i].lat, wps[i + 1].lon, wps[i + 1].lat);
   }
   return d;
 }
@@ -185,7 +195,7 @@ export function prepareSimulation(): {
 } {
   const store = useMissionsStore.getState();
   const mission = store.missions.find((m) => m.id === store.currentMissionId) ?? null;
-  if (!mission || mission.waypoints.length < 2) {
+  if (!mission || effectiveWaypoints(mission).length < 2) {
     return { totalDurationMs: 0, startState: null };
   }
   return {

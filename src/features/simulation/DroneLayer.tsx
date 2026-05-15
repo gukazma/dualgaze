@@ -4,6 +4,7 @@ import { useCesiumViewer } from '../cesium/CesiumContext';
 import { useCurrentMission } from '../../store/missions';
 import { useSimulationStore } from '../../store/simulation';
 import { wgs84ToCartesian3 } from '../../lib/coord';
+import { effectiveWaypoints } from './SimulationLoop';
 
 /**
  * 模拟飞行可视化层：
@@ -42,7 +43,7 @@ export function DroneLayer() {
           if (!s.droneState) return [];
           const positions: Cesium.Cartesian3[] = [];
           for (let i = 0; i <= s.currentSegmentIndex; i++) {
-            const wp = m.waypoints[i];
+            const wp = effectiveWaypoints(m)[i];
             if (wp) positions.push(wgs84ToCartesian3(wp.lon, wp.lat, wp.alt));
           }
           positions.push(
@@ -67,8 +68,8 @@ export function DroneLayer() {
           const positions: Cesium.Cartesian3[] = [
             wgs84ToCartesian3(s.droneState.lon, s.droneState.lat, s.droneState.alt),
           ];
-          for (let i = s.currentSegmentIndex + 1; i < m.waypoints.length; i++) {
-            const wp = m.waypoints[i];
+          for (let i = s.currentSegmentIndex + 1; i < effectiveWaypoints(m).length; i++) {
+            const wp = effectiveWaypoints(m)[i];
             if (wp) positions.push(wgs84ToCartesian3(wp.lon, wp.lat, wp.alt));
           }
           return positions;

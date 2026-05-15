@@ -2,8 +2,12 @@
  * Mission → DJI WPML 1.0.6 KMZ 导出。
  *
  * KMZ 结构：zip 包含 `wpmz/template.kml` + `wpmz/waylines.wpml` 两份 XML。
- * 参考 dji_way_line/src/utils/kmzGenerator.js（396 行原版）；本实现去掉
- * 巡逻/面状航线相关字段，仅保留 'patrol' (DJI 称 'waypoint') template。
+ * 参考 dji_way_line/src/utils/kmzGenerator.js（396 行原版）。
+ *
+ * 类型分支：
+ *   - patrol：用 mission.waypoints 当 Placemark 列表
+ *   - mapping：用 scanPath 当飞行航点 + 额外 Placemark 包 polygon boundary +
+ *     自定义 <wpml:dualgazeScanParams> 持久化扫描参数
  *
  * Round-trip 兼容性：所有 MissionConfig 字段都能写入并被 kmz-import 还原。
  * `isClosedLoop` / `fov` 这两个 DJI 标准没有对应字段的，按默认值还原（lossy）。
@@ -12,10 +16,17 @@ import JSZip from 'jszip';
 import {
   DRONE_CATALOG,
   PAYLOAD_CATALOG,
+  type MappingScanParams,
   type Mission,
+  type PolygonVertex,
   type Waypoint,
   type WaypointAction,
 } from '../types/mission';
+
+/** 飞行航点列表：mapping 用 scanPath，patrol 用 waypoints */
+function flightWaypoints(mission: Mission): Waypoint[] {
+  return mission.type === 'mapping' ? (mission.scanPath ?? []) : mission.waypoints;
+}
 
 const WPML_NS = 'http://www.dji.com/wpmz/1.0.6';
 const KML_NS = 'http://www.opengis.net/kml/2.2';
@@ -36,6 +47,14 @@ function buildTemplateKml(mission: Mission): string {
   const payload = PAYLOAD_CATALOG.find((p) => p.id === mission.payloadId);
   const now = Date.now();
   const takeOffPointXml = buildTakeOffPointXml(mission);
+  const wps = flightWaypoints(mission);
+  const isMapping = mission.type === 'mapping';
+  const polygonPlacemarkXml = isMapping
+    ? buildPolygonPlacemarkXml(mission.polygon ?? [])
+    : '';
+  const scanParamsXml = isMapping
+    ? buildScanParamsXml(mission.scanParams)
+    : '';
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="${KML_NS}" xmlns:wpml="${WPML_NS}">
@@ -63,6 +82,7 @@ function buildTemplateKml(mission: Mission): string {
     </wpml:missionConfig>
     <Folder>
       <wpml:templateType>waypoint</wpml:templateType>
+      <wpml:dualgazeMissionType>${mission.type}</wpml:dualgazeMissionType>
       <wpml:templateId>0</wpml:templateId>
       <wpml:waylineCoordinateSysParam>
         <wpml:coordinateMode>WGS84</wpml:coordinateMode>
@@ -71,10 +91,10 @@ function buildTemplateKml(mission: Mission): string {
       <wpml:autoFlightSpeed>${mission.globalSpeed}</wpml:autoFlightSpeed>${takeOffPointXml}
       <wpml:globalWaypointTurnMode>toPointAndStopWithDiscontinuityCurvature</wpml:globalWaypointTurnMode>
       <wpml:globalUseStraightLine>1</wpml:globalUseStraightLine>
-${mission.waypoints.map((wp, i) => buildTemplatePlacemark(wp, i)).join('\n')}
+${polygonPlacemarkXml}${wps.map((wp, i) => buildTemplatePlacemark(wp, i)).join('\n')}
       <wpml:dualgazeIsClosedLoop>${mission.isClosedLoop ? 1 : 0}</wpml:dualgazeIsClosedLoop>
       <wpml:dualgazeGlobalAction>${mission.globalAction}</wpml:dualgazeGlobalAction>
-    </Folder>
+${scanParamsXml}    </Folder>
   </Document>
 </kml>`;
 }
@@ -105,11 +125,17 @@ function buildTemplatePlacemark(wp: Waypoint, index: number): string {
 function buildWaylinesWpml(mission: Mission): string {
   const drone = DRONE_CATALOG.find((d) => d.id === mission.droneId);
   const payload = PAYLOAD_CATALOG.find((p) => p.id === mission.payloadId);
-  const distance = totalPathDistance(mission.waypoints).toFixed(1);
+  const wps = flightWaypoints(mission);
+  const distance = totalPathDistance(wps).toFixed(1);
   const duration = mission.globalSpeed > 0
     ? Math.round(parseFloat(distance) / mission.globalSpeed)
     : 0;
   const takeOffPointXml = buildTakeOffPointXml(mission);
+  const isMapping = mission.type === 'mapping';
+  const polygonPlacemarkXml = isMapping
+    ? buildPolygonPlacemarkXml(mission.polygon ?? [])
+    : '';
+  const scanParamsXml = isMapping ? buildScanParamsXml(mission.scanParams) : '';
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="${KML_NS}" xmlns:wpml="${WPML_NS}">
@@ -135,14 +161,15 @@ function buildWaylinesWpml(mission: Mission): string {
     <Folder>
       <wpml:templateId>0</wpml:templateId>
       <wpml:waylineId>0</wpml:waylineId>
+      <wpml:dualgazeMissionType>${mission.type}</wpml:dualgazeMissionType>
       <wpml:distance>${distance}</wpml:distance>
       <wpml:duration>${duration}</wpml:duration>
       <wpml:autoFlightSpeed>${mission.globalSpeed}</wpml:autoFlightSpeed>
       <wpml:executeHeightMode>${mission.heightMode}</wpml:executeHeightMode>${takeOffPointXml}
-${mission.waypoints.map((wp, i, all) => buildWaylinePlacemark(wp, i, all.length, mission.globalAction)).join('\n')}
+${isMapping ? buildStartActionGroupXml(mission.scanParams?.gimbalPitchAngle ?? -45) : ''}${polygonPlacemarkXml}${wps.map((wp, i, all) => buildWaylinePlacemark(wp, i, all.length, mission.globalAction, isMapping)).join('\n')}
       <wpml:dualgazeIsClosedLoop>${mission.isClosedLoop ? 1 : 0}</wpml:dualgazeIsClosedLoop>
       <wpml:dualgazeGlobalAction>${mission.globalAction}</wpml:dualgazeGlobalAction>
-    </Folder>
+${scanParamsXml}    </Folder>
   </Document>
 </kml>`;
 }
@@ -152,6 +179,7 @@ function buildWaylinePlacemark(
   index: number,
   total: number,
   globalAction: Mission['globalAction'],
+  isMapping: boolean,
 ): string {
   const isEndpoint = index === 0 || index === total - 1;
   const turnMode = isEndpoint
@@ -163,6 +191,10 @@ function buildWaylinePlacemark(
   if (globalAction !== 'none') {
     // 全局动作在每个航点 reachPoint 时触发一次
     actions.push({ id: `__global_${index}`, type: globalAction });
+  }
+  // mapping 模式：末点自动追加 stopRecord（startRecord 在 startActionGroup 里）
+  if (isMapping && index === total - 1) {
+    actions.push({ id: `__mapping_stop`, type: 'stopRecord' });
   }
   const actionGroupXml = actions.length > 0 ? buildActionGroupXml(index, actions) : '';
 
@@ -238,14 +270,71 @@ function buildActionXml(action: WaypointAction, id: number): string {
 }
 
 function buildTakeOffPointXml(mission: Mission): string {
-  if (mission.heightMode === 'WGS84' || mission.waypoints.length === 0) return '';
-  const first = mission.waypoints[0];
+  if (mission.heightMode === 'WGS84') return '';
+  const wps = flightWaypoints(mission);
+  if (wps.length === 0) return '';
+  const first = wps[0];
   return `
       <wpml:takeOffPoint>
         <wpml:latitude>${first.lat.toFixed(7)}</wpml:latitude>
         <wpml:longitude>${first.lon.toFixed(7)}</wpml:longitude>
         <wpml:height>${first.alt}</wpml:height>
       </wpml:takeOffPoint>`;
+}
+
+// ===== mapping XML 片段 =====
+
+/** mapping 多边形 boundary：包成一个无 index 的 Placemark+Polygon，DJI Pilot 2 当 hint */
+function buildPolygonPlacemarkXml(polygon: PolygonVertex[]): string {
+  if (polygon.length < 3) return '';
+  const coords = polygon
+    .map((v) => `${v.lon.toFixed(7)},${v.lat.toFixed(7)},${v.alt}`)
+    .join(' ');
+  return `      <Placemark>
+        <Polygon>
+          <outerBoundaryIs>
+            <LinearRing>
+              <coordinates>${coords}</coordinates>
+            </LinearRing>
+          </outerBoundaryIs>
+        </Polygon>
+      </Placemark>
+`;
+}
+
+function buildScanParamsXml(params: MappingScanParams | undefined): string {
+  if (!params) return '';
+  return `      <wpml:dualgazeScanParams>
+        <wpml:spacing>${params.spacing}</wpml:spacing>
+        <wpml:direction>${params.direction}</wpml:direction>
+        <wpml:margin>${params.margin}</wpml:margin>
+        <wpml:gimbalPitchAngle>${params.gimbalPitchAngle}</wpml:gimbalPitchAngle>
+        <wpml:overlapH>${params.overlapH}</wpml:overlapH>
+        <wpml:overlapW>${params.overlapW}</wpml:overlapW>
+      </wpml:dualgazeScanParams>
+`;
+}
+
+/** mapping 起飞 actionGroup：gimbalRotate + startRecord（dji_way_line 模式） */
+function buildStartActionGroupXml(gimbalPitch: number): string {
+  return `      <wpml:startActionGroup>
+        <wpml:action>
+          <wpml:actionId>0</wpml:actionId>
+          <wpml:actionActuatorFunc>gimbalRotate</wpml:actionActuatorFunc>
+          <wpml:actionActuatorFuncParam>
+            <wpml:gimbalPitchRotateEnable>1</wpml:gimbalPitchRotateEnable>
+            <wpml:gimbalPitchRotateAngle>${gimbalPitch}</wpml:gimbalPitchRotateAngle>
+          </wpml:actionActuatorFuncParam>
+        </wpml:action>
+        <wpml:action>
+          <wpml:actionId>1</wpml:actionId>
+          <wpml:actionActuatorFunc>startRecord</wpml:actionActuatorFunc>
+          <wpml:actionActuatorFuncParam>
+            <wpml:payloadPositionIndex>0</wpml:payloadPositionIndex>
+          </wpml:actionActuatorFuncParam>
+        </wpml:action>
+      </wpml:startActionGroup>
+`;
 }
 
 // ===== helpers =====

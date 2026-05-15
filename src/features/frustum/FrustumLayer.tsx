@@ -5,6 +5,7 @@ import { useCurrentMission } from '../../store/missions';
 import { useSimulationStore } from '../../store/simulation';
 import { wgs84ToCartesian3 } from '../../lib/coord';
 import type { Waypoint } from '../../types/mission';
+import { effectiveWaypoints } from '../simulation/SimulationLoop';
 
 const FAR_METERS = 6;
 const ASPECT = 4 / 3;
@@ -41,7 +42,7 @@ export function FrustumLayer() {
     if (!ds) return;
     ds.entities.removeAll();
     if (!mission) return;
-    for (const wp of mission.waypoints) {
+    for (const wp of effectiveWaypoints(mission)) {
       if (!reachedIds.has(wp.id)) continue;
       addFrustum(ds, wp);
     }

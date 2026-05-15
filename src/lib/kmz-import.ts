@@ -15,6 +15,7 @@ import {
   createBlankMission,
   createWaypoint as buildWaypoint,
   DRONE_CATALOG,
+  MAPPING_DEFAULTS,
   MISSION_DEFAULTS,
   PAYLOAD_CATALOG,
   type ExitOnRCLost,
@@ -22,12 +23,16 @@ import {
   type FlyToWaylineMode,
   type GlobalCameraAction,
   type HeightMode,
+  type MappingScanParams,
   type Mission,
+  type MissionType,
+  type PolygonVertex,
   type RCLostAction,
   type Waypoint,
   type WaypointAction,
   type WaypointActionType,
 } from '../types/mission';
+import { generateScanPath } from './mapping-scan';
 
 export interface KmzImportResult {
   mission: Mission;
@@ -86,6 +91,12 @@ export async function importKmzToMission(file: File): Promise<KmzImportResult> {
   const folder = doc.getElementsByTagName('Folder')[0];
   const heightMode = readText(folder, 'wpml:executeHeightMode') as HeightMode | null;
 
+  // 识别 mapping 类型：优先认 <wpml:dualgazeMissionType>，否则看 Polygon
+  const declaredType = readText(folder, 'wpml:dualgazeMissionType') as MissionType | null;
+  const polygon = parsePolygonFromDoc(doc);
+  const scanParams = parseScanParamsFromDoc(doc);
+  const isMapping = declaredType === 'mapping' || polygon.length >= 3;
+
   // DualGaze 自定义字段（lossless round-trip）
   const isClosedLoopText = readText(folder, 'wpml:dualgazeIsClosedLoop');
   const isClosedLoop = isClosedLoopText !== null
@@ -104,7 +115,7 @@ export async function importKmzToMission(file: File): Promise<KmzImportResult> {
   // 构建 mission
   const baseMission = createBlankMission({
     name: deriveMissionName(file.name),
-    type: 'patrol',
+    type: isMapping ? 'mapping' : 'patrol',
     droneId,
     payloadId,
   });
@@ -120,6 +131,11 @@ export async function importKmzToMission(file: File): Promise<KmzImportResult> {
     isClosedLoop,
     globalAction,
   };
+
+  if (isMapping) {
+    mission.polygon = polygon;
+    mission.scanParams = scanParams ?? { ...MAPPING_DEFAULTS };
+  }
 
   // waypoints
   const placemarks = Array.from(doc.getElementsByTagName('Placemark'));
@@ -162,10 +178,71 @@ export async function importKmzToMission(file: File): Promise<KmzImportResult> {
     waypoints.push(wp);
   }
 
-  mission.waypoints = waypoints;
+  if (isMapping) {
+    // mapping 类型：导入的 Placemark 是 scanPath，原 mission.waypoints 留空
+    // 注意：用本机 generateScanPath 重算（保证算法版本一致），不直接信任导入的 scanPath
+    mission.waypoints = [];
+    if (mission.polygon && mission.polygon.length >= 3 && mission.scanParams) {
+      mission.scanPath = generateScanPath(mission.polygon, mission.scanParams, {
+        alt: mission.globalHeight,
+        speed: mission.globalSpeed,
+      });
+    } else {
+      // polygon 不足时把导入的 scanPath waypoints 当成 scanPath 兜底
+      mission.scanPath = waypoints;
+    }
+  } else {
+    mission.waypoints = waypoints;
+  }
   mission.updatedAt = Date.now();
 
   return { mission, warnings };
+}
+
+// ===== mapping 辅助 =====
+
+function parsePolygonFromDoc(doc: Document): PolygonVertex[] {
+  const placemarks = Array.from(doc.getElementsByTagName('Placemark'));
+  for (const pm of placemarks) {
+    const polygons = pm.getElementsByTagName('Polygon');
+    if (polygons.length === 0) continue;
+    const linearRings = polygons[0].getElementsByTagName('LinearRing');
+    if (linearRings.length === 0) continue;
+    const coordsEl = linearRings[0].getElementsByTagName('coordinates')[0];
+    if (!coordsEl?.textContent) continue;
+    return coordsEl.textContent
+      .trim()
+      .split(/\s+/)
+      .map((triple) => {
+        const [lonStr, latStr, altStr] = triple.split(',');
+        return {
+          lon: parseFloat(lonStr),
+          lat: parseFloat(latStr),
+          alt: parseFloat(altStr ?? '0') || 0,
+        };
+      })
+      .filter((v) => Number.isFinite(v.lon) && Number.isFinite(v.lat));
+  }
+  return [];
+}
+
+function parseScanParamsFromDoc(doc: Document): MappingScanParams | null {
+  const el = doc.getElementsByTagName('wpml:dualgazeScanParams')[0];
+  if (!el) return null;
+  const spacing = readNumber(el, 'wpml:spacing');
+  const direction = readNumber(el, 'wpml:direction');
+  const margin = readNumber(el, 'wpml:margin');
+  const gimbalPitchAngle = readNumber(el, 'wpml:gimbalPitchAngle');
+  const overlapH = readNumber(el, 'wpml:overlapH');
+  const overlapW = readNumber(el, 'wpml:overlapW');
+  return {
+    spacing: spacing ?? MAPPING_DEFAULTS.spacing,
+    direction: direction ?? MAPPING_DEFAULTS.direction,
+    margin: margin ?? MAPPING_DEFAULTS.margin,
+    gimbalPitchAngle: gimbalPitchAngle ?? MAPPING_DEFAULTS.gimbalPitchAngle,
+    overlapH: overlapH ?? MAPPING_DEFAULTS.overlapH,
+    overlapW: overlapW ?? MAPPING_DEFAULTS.overlapW,
+  };
 }
 
 function parseActionsFromPlacemark(
