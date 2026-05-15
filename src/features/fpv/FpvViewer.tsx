@@ -46,6 +46,10 @@ export function FpvViewer() {
     if (viewer.scene.skyBox) viewer.scene.skyBox.show = true;
     if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = true;
     viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#0c0d10');
+    // FPV 窗虽然小但用户最关心清晰度（近距离俯瞰），SSE 设更激进
+    viewer.scene.globe.maximumScreenSpaceError = 1.0;
+    viewer.scene.globe.preloadAncestors = true;
+    viewer.scene.postProcessStages.fxaa.enabled = true;
     // 完全锁定相机：FPV 只接受 store 驱动
     const ctrl = viewer.scene.screenSpaceCameraController;
     ctrl.enableRotate = false;

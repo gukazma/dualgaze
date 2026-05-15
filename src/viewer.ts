@@ -32,6 +32,14 @@ export function createViewer(container: HTMLElement): Cesium.Viewer {
   if (viewer.scene.skyAtmosphere) viewer.scene.skyAtmosphere.show = true;
   viewer.scene.backgroundColor = Cesium.Color.fromCssColorString('#0c0d10');
 
+  // 底图清晰度提升：default globe SSE 是 2.0，降到 1.0 让贴图更早切到高 LOD
+  viewer.scene.globe.maximumScreenSpaceError = 1.0;
+  // 预载父/兄瓦片，切换 LOD 时减少模糊
+  viewer.scene.globe.preloadAncestors = true;
+  viewer.scene.globe.preloadSiblings = true;
+  // FXAA 抗锯齿
+  viewer.scene.postProcessStages.fxaa.enabled = true;
+
   // 让 pickPosition 能从深度缓冲拿坐标（点云 picker 用）
   viewer.scene.pickTranslucentDepth = true;
 

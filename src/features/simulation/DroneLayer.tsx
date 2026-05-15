@@ -8,11 +8,12 @@ import { effectiveWaypoints } from './SimulationLoop';
 
 /**
  * 模拟飞行可视化层：
- *   - drone entity（青色圆 + plane billboard）位置随 droneState 变化
- *   - 已飞段（cyan 实线）：从 waypoint[0] → … → waypoint[segIdx] → drone
- *   - 未飞段（yellow 虚线）：drone → waypoint[segIdx+1] → … → waypoint[last]
+ *   - 完整参考轨迹（cyan 半透明，贯穿 mission 全程，让用户一眼看见整条路径）
+ *   - 已飞段实色 cyan 覆盖完整轨迹（实时进度可视化）
+ *   - drone entity（青色圆 + label）位置随 droneState 变化
  *
  * 只在 mode === 'simulating' 时渲染；exitSim 时清理。
+ * patrol 用 mission.waypoints；mapping 用 mission.scanPath（走 effectiveWaypoints）。
  */
 export function DroneLayer() {
   const viewer = useCesiumViewer();
@@ -34,7 +35,21 @@ export function DroneLayer() {
     viewer.dataSources.add(ds);
     dataSourceRef.current = ds;
 
-    // 已飞段
+    // 完整参考轨迹（贯穿全程，cyan 半透明实线）
+    ds.entities.add({
+      polyline: {
+        positions: new Cesium.CallbackProperty(() => {
+          const wps = effectiveWaypoints(mission);
+          return wps.map((wp) => wgs84ToCartesian3(wp.lon, wp.lat, wp.alt));
+        }, false),
+        width: 2.5,
+        material: Cesium.Color.fromCssColorString('#00d2c0').withAlpha(0.35),
+        arcType: Cesium.ArcType.GEODESIC,
+        clampToGround: false,
+      },
+    });
+
+    // 已飞段（实色 cyan 加粗，覆盖完整轨迹的前半段）
     ds.entities.add({
       polyline: {
         positions: new Cesium.CallbackProperty(() => {
@@ -51,34 +66,8 @@ export function DroneLayer() {
           );
           return positions;
         }, false),
-        width: 3,
+        width: 4,
         material: Cesium.Color.fromCssColorString('#00d2c0'),
-        arcType: Cesium.ArcType.GEODESIC,
-        clampToGround: false,
-      },
-    });
-
-    // 未飞段（drone → 剩余 waypoints）
-    ds.entities.add({
-      polyline: {
-        positions: new Cesium.CallbackProperty(() => {
-          const s = useSimulationStore.getState();
-          const m = mission;
-          if (!s.droneState) return [];
-          const positions: Cesium.Cartesian3[] = [
-            wgs84ToCartesian3(s.droneState.lon, s.droneState.lat, s.droneState.alt),
-          ];
-          for (let i = s.currentSegmentIndex + 1; i < effectiveWaypoints(m).length; i++) {
-            const wp = effectiveWaypoints(m)[i];
-            if (wp) positions.push(wgs84ToCartesian3(wp.lon, wp.lat, wp.alt));
-          }
-          return positions;
-        }, false),
-        width: 2,
-        material: new Cesium.PolylineDashMaterialProperty({
-          color: Cesium.Color.fromCssColorString('#ffd24a'),
-          dashLength: 12,
-        }),
         arcType: Cesium.ArcType.GEODESIC,
         clampToGround: false,
       },

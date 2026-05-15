@@ -7,18 +7,27 @@ import { PAYLOAD_CATALOG } from '../types/mission';
 import { cn } from '../lib/utils';
 
 // Pencil 原型基准尺寸（FrameC EoDgA：400×260，x=404 y=16 在 820 宽 MapArea 中 → 右贴边 16px）
-const W = 400;
-const H = 260;
+const DEFAULT_W = 400;
+const DEFAULT_H = 260;
+const MIN_W = 280;
+const MIN_H = 180;
+const MAX_W = 900;
+const MAX_H = 720;
 const MARGIN = 16;
 const TITLE_H = 32;
 const HUD_H = 28;
+
+type DragMode =
+  | { kind: 'move'; dx: number; dy: number }
+  | { kind: 'resize'; startX: number; startY: number; startW: number; startH: number };
 
 /**
  * 右上浮窗（与原型对齐）。位置基准是 FPV 自己的 offsetParent（CesiumViewer 父级 .relative div），
  * 不是 window —— 之前用 window.innerWidth 会把窗推到右 aside 后面被裁掉。
  *
- * - 默认 right=16 top=16 贴中央容器右上
- * - 用户拖动后切到 absolute left/top 模式
+ * - 默认 right=16 top=16 贴中央容器右上 + 尺寸 400×260（pencil 原型）
+ * - 拖标题栏切到 absolute left/top + 移动
+ * - 拖右下角 resize handle 改 W/H（min 280×180 / max 900×720）
  * - 最小化只折叠 body 保留标题栏，关闭隐藏并露重启按钮
  */
 export function FpvWindow() {
@@ -28,9 +37,10 @@ export function FpvWindow() {
 
   // null = 未拖动过，用 right/top 默认；拖动后切到 {x,y}
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const [size, setSize] = useState({ w: DEFAULT_W, h: DEFAULT_H });
   const [collapsed, setCollapsed] = useState(false);
   const [visible, setVisible] = useState(true);
-  const dragRef = useRef<{ dx: number; dy: number } | null>(null);
+  const dragRef = useRef<DragMode | null>(null);
   const winRef = useRef<HTMLDivElement>(null);
   // 浮窗 offsetParent 的 client 尺寸（用于钳制拖动范围）
   const [parentSize, setParentSize] = useState({ w: 1024, h: 768 });
@@ -48,20 +58,33 @@ export function FpvWindow() {
 
   useEffect(() => {
     const onMove = (e: MouseEvent): void => {
-      if (!dragRef.current) return;
+      const drag = dragRef.current;
+      if (!drag) return;
       const parent = winRef.current?.offsetParent as HTMLElement | null;
       if (!parent) return;
       const rect = parent.getBoundingClientRect();
-      const relX = e.clientX - rect.left - dragRef.current.dx;
-      const relY = e.clientY - rect.top - dragRef.current.dy;
-      setPos({
-        x: Math.max(0, Math.min(rect.width - 80, relX)),
-        y: Math.max(0, Math.min(rect.height - 40, relY)),
-      });
+
+      if (drag.kind === 'move') {
+        const relX = e.clientX - rect.left - drag.dx;
+        const relY = e.clientY - rect.top - drag.dy;
+        setPos({
+          x: Math.max(0, Math.min(rect.width - 80, relX)),
+          y: Math.max(0, Math.min(rect.height - 40, relY)),
+        });
+      } else {
+        // resize
+        const dw = e.clientX - drag.startX;
+        const dh = e.clientY - drag.startY;
+        setSize({
+          w: Math.max(MIN_W, Math.min(MAX_W, drag.startW + dw)),
+          h: Math.max(MIN_H, Math.min(MAX_H, drag.startH + dh)),
+        });
+      }
     };
     const onUp = (): void => {
       dragRef.current = null;
       document.body.style.userSelect = '';
+      document.body.style.cursor = '';
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -84,7 +107,8 @@ export function FpvWindow() {
   }
 
   // 默认 right/top 贴边；拖动后切 left/top。宽度溢出（容器 < W+32）时收缩
-  const effectiveW = Math.min(W, Math.max(280, parentSize.w - MARGIN * 2));
+  const effectiveW = Math.min(size.w, Math.max(MIN_W, parentSize.w - MARGIN * 2));
+  const effectiveH = Math.min(size.h, Math.max(MIN_H, parentSize.h - MARGIN * 2));
   const posStyle: React.CSSProperties =
     pos === null
       ? { right: MARGIN, top: MARGIN }
@@ -97,7 +121,7 @@ export function FpvWindow() {
       style={{
         ...posStyle,
         width: effectiveW,
-        height: collapsed ? TITLE_H : H,
+        height: collapsed ? TITLE_H : effectiveH,
       }}
     >
       <div
@@ -109,7 +133,11 @@ export function FpvWindow() {
           // 切到 left/top：算当前真实 left/top 作为锚点
           const curLeft = winRect.left - rect.left;
           const curTop = winRect.top - rect.top;
-          dragRef.current = { dx: e.clientX - rect.left - curLeft, dy: e.clientY - rect.top - curTop };
+          dragRef.current = {
+            kind: 'move',
+            dx: e.clientX - rect.left - curLeft,
+            dy: e.clientY - rect.top - curTop,
+          };
           setPos({ x: curLeft, y: curTop });
           document.body.style.userSelect = 'none';
         }}
@@ -143,7 +171,7 @@ export function FpvWindow() {
       </div>
 
       {!collapsed && (
-        <div className="relative" style={{ height: H - TITLE_H }}>
+        <div className="relative" style={{ height: effectiveH - TITLE_H }}>
           <FpvViewer />
           {droneState && (
             <div
@@ -156,6 +184,36 @@ export function FpvWindow() {
               <HudItem label="LAT" value={droneState.lat.toFixed(4)} />
             </div>
           )}
+          {/* resize handle 右下角 */}
+          <div
+            onMouseDown={(e) => {
+              e.stopPropagation();
+              dragRef.current = {
+                kind: 'resize',
+                startX: e.clientX,
+                startY: e.clientY,
+                startW: effectiveW,
+                startH: effectiveH,
+              };
+              document.body.style.userSelect = 'none';
+              document.body.style.cursor = 'nwse-resize';
+            }}
+            className="absolute bottom-0 right-0 z-10 h-4 w-4 cursor-nwse-resize"
+            title="拖动改变大小"
+          >
+            <svg
+              viewBox="0 0 16 16"
+              className="h-full w-full text-text-muted hover:text-text-secondary"
+            >
+              <path
+                d="M 12 4 L 4 12 M 14 8 L 8 14 M 14 12 L 12 14"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                fill="none"
+                strokeLinecap="round"
+              />
+            </svg>
+          </div>
         </div>
       )}
     </div>
