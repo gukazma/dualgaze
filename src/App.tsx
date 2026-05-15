@@ -3,6 +3,7 @@ import { useFlyToMission } from './features/cesium/useFlyToMission';
 import { WaypointLayer } from './features/waypoint/WaypointLayer';
 import { DroneLayer } from './features/simulation/DroneLayer';
 import { FrustumLayer } from './features/frustum/FrustumLayer';
+import { MappingLayer } from './features/mapping/MappingLayer';
 import { useSimulationLoop } from './features/simulation/SimulationLoop';
 import { TopBar } from './components/TopBar';
 import { MissionLibrary } from './components/MissionLibrary';
@@ -13,6 +14,7 @@ import { FpvWindow } from './components/FpvWindow';
 import { ViewToggle } from './components/ViewToggle';
 import { Toaster } from './components/ui/sonner';
 import { useMapViewSync } from './features/cesium/useMapViewSync';
+import { useCurrentMission } from './store/missions';
 import { useSimulationStore } from './store/simulation';
 
 export function App() {
@@ -21,6 +23,8 @@ export function App() {
   useMapViewSync();
   const mode = useSimulationStore((s) => s.mode);
   const isSimulating = mode === 'simulating';
+  const mission = useCurrentMission();
+  const isMapping = mission?.type === 'mapping';
 
   return (
     <div className="flex h-full w-full flex-col bg-bg text-text-primary">
@@ -33,7 +37,7 @@ export function App() {
 
         <div className="relative flex-1 overflow-hidden bg-bg">
           <CesiumViewer />
-          <WaypointLayer />
+          {isMapping ? <MappingLayer /> : <WaypointLayer />}
           <DroneLayer />
           <FrustumLayer />
           {!isSimulating && <ViewToggle />}

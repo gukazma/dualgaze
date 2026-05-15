@@ -5,23 +5,25 @@ import { useCurrentMission } from '../../store/missions';
 import { wgs84ToCartesian3 } from '../../lib/coord';
 
 /**
- * 当切换 / 选中 mission 时，自动把相机飞到该 mission 的航点中心。
- * - 有 ≥1 航点：飞到航点几何中心，俯视角 -50°，距离按包围球半径 × 3
- * - 没航点：飞到中国境内默认视角（一个安全的初始位置），让用户开始画
+ * 当切换 / 选中 mission 时，自动把相机飞到该 mission 的几何中心。
+ * - patrol：用 mission.waypoints 算包围球
+ * - mapping：用 mission.polygon 算包围球（polygon 有 ≥1 点就够）
+ * - 都空：飞默认（北京视角）
  */
 export function useFlyToMission(): void {
   const viewer = useCesiumViewer();
   const mission = useCurrentMission();
   const lastFlownMissionRef = useRef<string | null>(null);
-  const lastWaypointCountRef = useRef<number>(0);
+  const lastAnchorCountRef = useRef<number>(0);
 
   useEffect(() => {
     if (!viewer) return;
 
-    // 启动时：没 mission 或 mission 没航点 → 飞到默认（北京视角）
-    if (!mission || mission.waypoints.length === 0) {
+    const anchors = collectAnchors(mission);
+
+    // 启动时：没 mission 或没有任何锚点 → 飞到默认（北京视角）
+    if (!mission || anchors.length === 0) {
       if (lastFlownMissionRef.current !== (mission?.id ?? null) && lastFlownMissionRef.current === null) {
-        // 只第一次启动 fly default
         viewer.camera.flyTo({
           destination: wgs84ToCartesian3(116.40, 39.91, 5000),
           orientation: {
@@ -33,18 +35,19 @@ export function useFlyToMission(): void {
         });
         lastFlownMissionRef.current = mission?.id ?? null;
       }
+      lastAnchorCountRef.current = 0;
       return;
     }
 
     // 切到新 mission 或者首次加点 → 飞过去
     const changedMission = mission.id !== lastFlownMissionRef.current;
-    const firstWaypoint =
+    const firstAnchor =
       lastFlownMissionRef.current === mission.id &&
-      lastWaypointCountRef.current === 0 &&
-      mission.waypoints.length > 0;
+      lastAnchorCountRef.current === 0 &&
+      anchors.length > 0;
 
-    if (changedMission || firstWaypoint) {
-      const positions = mission.waypoints.map((w) => wgs84ToCartesian3(w.lon, w.lat, w.alt));
+    if (changedMission || firstAnchor) {
+      const positions = anchors.map((p) => wgs84ToCartesian3(p.lon, p.lat, p.alt));
       const sphere = Cesium.BoundingSphere.fromPoints(positions);
       const range = Math.max(sphere.radius * 3, 400);
       viewer.camera.flyToBoundingSphere(sphere, {
@@ -54,6 +57,16 @@ export function useFlyToMission(): void {
       lastFlownMissionRef.current = mission.id;
     }
 
-    lastWaypointCountRef.current = mission.waypoints.length;
-  }, [viewer, mission?.id, mission?.waypoints.length, mission]);
+    lastAnchorCountRef.current = anchors.length;
+  }, [viewer, mission?.id, mission?.waypoints.length, mission?.polygon?.length, mission]);
+}
+
+function collectAnchors(
+  mission: ReturnType<typeof useCurrentMission>,
+): Array<{ lon: number; lat: number; alt: number }> {
+  if (!mission) return [];
+  if (mission.type === 'mapping') {
+    return mission.polygon ?? [];
+  }
+  return mission.waypoints;
 }
