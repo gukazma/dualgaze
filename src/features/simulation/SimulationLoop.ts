@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { toast } from 'sonner';
 import { useCurrentMission, useMissionsStore } from '../../store/missions';
 import { useSimulationStore, type DroneState, type SimSpeed } from '../../store/simulation';
 import type { Mission, Waypoint } from '../../types/mission';
@@ -82,7 +83,15 @@ export function useSimulationLoop(): void {
 
       // 到尽头自动停
       if (elapsed >= total - 1e-6) {
-        useSimulationStore.getState().pause();
+        const finalState = useSimulationStore.getState();
+        if (finalState.running) {
+          finalState.pause();
+          const wpCount = effectiveWaypoints(m).length;
+          const reachedCount = finalState.reachedWaypointIds.size;
+          toast.success('模拟飞行完成', {
+            description: `${wpCount} 航点 · ${reachedCount} 视锥`,
+          });
+        }
       }
 
       raf = requestAnimationFrame(step);

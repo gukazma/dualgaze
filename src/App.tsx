@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { CesiumViewer } from './features/cesium/CesiumViewer';
 import { useFlyToMission } from './features/cesium/useFlyToMission';
 import { WaypointLayer } from './features/waypoint/WaypointLayer';
@@ -6,7 +7,7 @@ import { FrustumLayer } from './features/frustum/FrustumLayer';
 import { MappingLayer } from './features/mapping/MappingLayer';
 import { useSimulationLoop } from './features/simulation/SimulationLoop';
 import { TopBar } from './components/TopBar';
-import { MissionLibrary } from './components/MissionLibrary';
+import { MissionLibrary, loadBavariaDemo } from './components/MissionLibrary';
 import { CreateMissionModal } from './components/CreateMissionModal';
 import { RightSheet } from './components/RightSheet';
 import { PlaybackBar } from './components/PlaybackBar';
@@ -14,7 +15,7 @@ import { FpvWindow } from './components/FpvWindow';
 import { ViewToggle } from './components/ViewToggle';
 import { Toaster } from './components/ui/sonner';
 import { useMapViewSync } from './features/cesium/useMapViewSync';
-import { useCurrentMission } from './store/missions';
+import { useCurrentMission, useMissionsStore } from './store/missions';
 import { useSimulationStore } from './store/simulation';
 
 export function App() {
@@ -25,6 +26,19 @@ export function App() {
   const isSimulating = mode === 'simulating';
   const mission = useCurrentMission();
   const isMapping = mission?.type === 'mapping';
+
+  // 首次启动：persist 还原后 missions 仍为空 → 自动 seed patrol Bavaria 演示一次
+  const seededRef = useRef(false);
+  useEffect(() => {
+    if (seededRef.current) return;
+    seededRef.current = true;
+    // 给 zustand persist 一点时间 rehydrate
+    const t = setTimeout(() => {
+      const missionsCount = useMissionsStore.getState().missions.length;
+      if (missionsCount === 0) loadBavariaDemo();
+    }, 200);
+    return () => clearTimeout(t);
+  }, []);
 
   return (
     <div className="flex h-full w-full flex-col bg-bg text-text-primary">

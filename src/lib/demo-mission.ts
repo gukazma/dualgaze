@@ -32,3 +32,26 @@ export const BAVARIA_DEMO_PRESET = {
   pitch: -55,
   fov: 60,
 } as const;
+
+/**
+ * mapping 演示：跟 patrol 共用中心点，但围一个更大的多边形（~120m × 80m）
+ * 让 spacing=20 默认值能生成 4-5 条扫描线、对效果更直观。
+ */
+export const BAVARIA_MAPPING_DEMO_OFFSETS: ReadonlyArray<{ dLon: number; dLat: number }> = [
+  { dLon: -0.00080, dLat: -0.00036 }, // SW
+  { dLon: -0.00080, dLat: +0.00036 }, // NW
+  { dLon: +0.00080, dLat: +0.00036 }, // NE
+  { dLon: +0.00080, dLat: -0.00036 }, // SE
+];
+
+export const BAVARIA_MAPPING_DEMO_PRESET = {
+  name: 'Bavaria 面航线演示',
+  droneId: 'm3e',
+  payloadId: 'm3e-cam',
+  /** 相对 BAVARIA_DEMO_CENTER.alt 的飞行高度（m） */
+  altOffset: 50,
+  scanSpacing: 20,
+  scanDirection: 0,
+  scanMargin: 5,
+  gimbalPitchAngle: -55,
+} as const;

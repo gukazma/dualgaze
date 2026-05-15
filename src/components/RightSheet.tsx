@@ -18,8 +18,10 @@ export function RightSheet() {
   const isMapping = mission?.type === 'mapping';
 
   // 切到 patrol 时如果当前 tab=scan 自动回退到 waypoints
+  // 切到 mapping 时如果当前 tab=actions（v2 不支持 mapping per-waypoint actions）自动回退
   useEffect(() => {
     if (!isMapping && tab === 'scan') setTab('waypoints');
+    if (isMapping && tab === 'actions') setTab('waypoints');
   }, [isMapping, tab, setTab]);
 
   const headerCount = isMapping
@@ -50,7 +52,7 @@ export function RightSheet() {
           <TabsList
             className={cn(
               'grid h-9 w-full gap-0 rounded-none border-b border-border-subtle bg-transparent p-0',
-              isMapping ? 'grid-cols-4' : 'grid-cols-3',
+              isMapping ? 'grid-cols-3' : 'grid-cols-3',
             )}
           >
             <TabsTrigger value="waypoints" className={TAB_CLS}>
@@ -59,9 +61,11 @@ export function RightSheet() {
             <TabsTrigger value="config" className={TAB_CLS}>
               任务配置
             </TabsTrigger>
-            <TabsTrigger value="actions" className={TAB_CLS}>
-              动作组
-            </TabsTrigger>
+            {!isMapping && (
+              <TabsTrigger value="actions" className={TAB_CLS}>
+                动作组
+              </TabsTrigger>
+            )}
             {isMapping && (
               <TabsTrigger value="scan" className={TAB_CLS}>
                 扫描列表

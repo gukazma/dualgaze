@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Plus, MoreHorizontal, ChevronDown, Sparkles } from 'lucide-react';
+import { Plus, MoreHorizontal, ChevronDown, Sparkles, Grid3x3 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from './ui/button';
 import { ScrollArea } from './ui/scroll-area';
@@ -21,7 +21,13 @@ import {
 import { useMissionsStore } from '../store/missions';
 import { useUiStore, type LibrarySort } from '../store/ui';
 import { DRONE_CATALOG, type Mission } from '../types/mission';
-import { BAVARIA_DEMO_CENTER, BAVARIA_DEMO_OFFSETS, BAVARIA_DEMO_PRESET } from '../lib/demo-mission';
+import {
+  BAVARIA_DEMO_CENTER,
+  BAVARIA_DEMO_OFFSETS,
+  BAVARIA_DEMO_PRESET,
+  BAVARIA_MAPPING_DEMO_OFFSETS,
+  BAVARIA_MAPPING_DEMO_PRESET,
+} from '../lib/demo-mission';
 import { cn } from '../lib/utils';
 
 const SORT_LABELS: Record<LibrarySort, string> = {
@@ -30,7 +36,7 @@ const SORT_LABELS: Record<LibrarySort, string> = {
   name: '名称排序',
 };
 
-function loadBavariaDemo(): void {
+export function loadBavariaDemo(): void {
   const store = useMissionsStore.getState();
   const id = store.createMission({
     name: BAVARIA_DEMO_PRESET.name,
@@ -56,6 +62,34 @@ function loadBavariaDemo(): void {
   });
   toast.success('已加载 Bavaria 演示', {
     description: `${BAVARIA_DEMO_OFFSETS.length} 航点 · pitch ${BAVARIA_DEMO_PRESET.pitch}°`,
+  });
+}
+
+function loadBavariaMappingDemo(): void {
+  const store = useMissionsStore.getState();
+  const id = store.createMission({
+    name: BAVARIA_MAPPING_DEMO_PRESET.name,
+    type: 'mapping',
+    droneId: BAVARIA_MAPPING_DEMO_PRESET.droneId,
+    payloadId: BAVARIA_MAPPING_DEMO_PRESET.payloadId,
+  });
+  const alt = BAVARIA_DEMO_CENTER.alt + BAVARIA_MAPPING_DEMO_PRESET.altOffset;
+  store.setPolygon(
+    BAVARIA_MAPPING_DEMO_OFFSETS.map(({ dLon, dLat }) => ({
+      lon: BAVARIA_DEMO_CENTER.lon + dLon,
+      lat: BAVARIA_DEMO_CENTER.lat + dLat,
+      alt,
+    })),
+  );
+  store.updateScanParams({
+    spacing: BAVARIA_MAPPING_DEMO_PRESET.scanSpacing,
+    direction: BAVARIA_MAPPING_DEMO_PRESET.scanDirection,
+    margin: BAVARIA_MAPPING_DEMO_PRESET.scanMargin,
+    gimbalPitchAngle: BAVARIA_MAPPING_DEMO_PRESET.gimbalPitchAngle,
+  });
+  store.updateMission(id, { globalHeight: BAVARIA_MAPPING_DEMO_PRESET.altOffset });
+  toast.success('已加载 Bavaria 面航线演示', {
+    description: `4 顶点多边形 · spacing ${BAVARIA_MAPPING_DEMO_PRESET.scanSpacing} m`,
   });
 }
 
@@ -104,9 +138,18 @@ export function MissionLibrary() {
             variant="outline"
             onClick={loadBavariaDemo}
             className="h-6 w-6 border-border bg-bg-input"
-            title="加载 Bavaria 演示航线"
+            title="加载 Bavaria 点航线演示"
           >
-            <Sparkles className="h-3 w-3 text-accent-cyan" />
+            <Sparkles className="h-3 w-3 text-accent" />
+          </Button>
+          <Button
+            size="icon"
+            variant="outline"
+            onClick={loadBavariaMappingDemo}
+            className="h-6 w-6 border-border bg-bg-input"
+            title="加载 Bavaria 面航线演示"
+          >
+            <Grid3x3 className="h-3 w-3 text-accent-cyan" />
           </Button>
           <Button
             size="icon"

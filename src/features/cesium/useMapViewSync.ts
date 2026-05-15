@@ -1,9 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import * as Cesium from 'cesium';
 import { useCesiumViewer } from './CesiumContext';
 import { useUiStore } from '../../store/ui';
 
 const NADIR_PITCH = -Cesium.Math.PI_OVER_TWO;
+const DEFAULT_3D_PITCH = Cesium.Math.toRadians(-50);
 const PITCH_TOLERANCE = 0.001; // ~0.06°，足够吸收浮点误差又能感知到拖拽 tilt
 
 /**
@@ -19,6 +20,7 @@ const PITCH_TOLERANCE = 0.001; // ~0.06°，足够吸收浮点误差又能感知
 export function useMapViewSync(): void {
   const viewer = useCesiumViewer();
   const mapView = useUiStore((s) => s.mapView);
+  const prevPitch3DRef = useRef<number>(DEFAULT_3D_PITCH);
 
   useEffect(() => {
     if (!viewer || viewer.isDestroyed()) return;
@@ -32,6 +34,8 @@ export function useMapViewSync(): void {
         carto.latitude,
         carto.height,
       );
+      // 进 2D 前记录当前 pitch，3D 切回时还原
+      prevPitch3DRef.current = viewer.camera.pitch;
       viewer.camera.flyTo({
         destination: dest,
         orientation: {
@@ -67,7 +71,16 @@ export function useMapViewSync(): void {
       return () => remove();
     }
 
-    // 3D：完全放开
+    // 3D：完全放开 + 还原前次 3D pitch（默认 -50°）
+    const carto = Cesium.Cartographic.fromCartesian(viewer.camera.position);
+    const target = Math.abs(prevPitch3DRef.current - NADIR_PITCH) < PITCH_TOLERANCE
+      ? DEFAULT_3D_PITCH
+      : prevPitch3DRef.current;
+    viewer.camera.flyTo({
+      destination: Cesium.Cartesian3.fromRadians(carto.longitude, carto.latitude, carto.height),
+      orientation: { heading: viewer.camera.heading, pitch: target, roll: 0 },
+      duration: 0.6,
+    });
     ctrl.enableRotate = true;
     ctrl.enableTilt = true;
     ctrl.enableLook = true;
