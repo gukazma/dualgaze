@@ -37,8 +37,6 @@ export function createViewer(container: HTMLElement): Cesium.Viewer {
   // 预载父/兄瓦片，切换 LOD 时减少模糊
   viewer.scene.globe.preloadAncestors = true;
   viewer.scene.globe.preloadSiblings = true;
-  // FXAA 抗锯齿
-  viewer.scene.postProcessStages.fxaa.enabled = true;
 
   // 让 pickPosition 能从深度缓冲拿坐标（点云 picker 用）
   viewer.scene.pickTranslucentDepth = true;

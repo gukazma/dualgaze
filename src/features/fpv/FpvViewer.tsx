@@ -5,6 +5,7 @@ import { useSimulationStore } from '../../store/simulation';
 import { useCurrentMission } from '../../store/missions';
 import { arcgisWorldImageryOptions } from '../../lib/amap';
 import { wgs84ToCartesian3 } from '../../lib/coord';
+import { effectiveWaypoints } from '../simulation/SimulationLoop';
 
 /**
  * 独立 Cesium scene 渲染无人机第一人称视角。
@@ -49,7 +50,6 @@ export function FpvViewer() {
     // FPV 窗虽然小但用户最关心清晰度（近距离俯瞰），SSE 设更激进
     viewer.scene.globe.maximumScreenSpaceError = 1.0;
     viewer.scene.globe.preloadAncestors = true;
-    viewer.scene.postProcessStages.fxaa.enabled = true;
     // 完全锁定相机：FPV 只接受 store 驱动
     const ctrl = viewer.scene.screenSpaceCameraController;
     ctrl.enableRotate = false;
@@ -71,7 +71,120 @@ export function FpvViewer() {
       (window as unknown as { __fpvViewer?: Cesium.Viewer }).__fpvViewer = viewer;
     }
 
+    // overlay：mission 轨迹 + 已飞段 + mapping polygon（CallbackProperty 实时读 store）
+    const ds = new Cesium.CustomDataSource('fpv-overlay');
+    void viewer.dataSources.add(ds);
+
+    const COLOR_PATH = Cesium.Color.fromCssColorString('#00d2c0').withAlpha(0.75);
+    const COLOR_PATH_DONE = Cesium.Color.fromCssColorString('#00d2c0');
+    const COLOR_POLY_OUTLINE = Cesium.Color.fromCssColorString('#ffd24a').withAlpha(0.9);
+
+    // 完整 mission 路径（半透明 cyan）+ depthFailMaterial 让线穿过地形可见
+    ds.entities.add({
+      polyline: {
+        positions: new Cesium.CallbackProperty(() => {
+          const m = missionRef.current;
+          if (!m) return [];
+          return effectiveWaypoints(m).map((wp) =>
+            wgs84ToCartesian3(wp.lon, wp.lat, wp.alt),
+          );
+        }, false),
+        width: 5,
+        material: COLOR_PATH,
+        depthFailMaterial: COLOR_PATH,
+        arcType: Cesium.ArcType.GEODESIC,
+        clampToGround: false,
+      },
+    });
+
+    // 已飞段（实色 cyan 加粗）
+    ds.entities.add({
+      polyline: {
+        positions: new Cesium.CallbackProperty(() => {
+          const s = useSimulationStore.getState();
+          const m = missionRef.current;
+          if (!m || !s.droneState) return [];
+          const positions: Cesium.Cartesian3[] = [];
+          const wps = effectiveWaypoints(m);
+          for (let i = 0; i <= s.currentSegmentIndex; i++) {
+            const wp = wps[i];
+            if (wp) positions.push(wgs84ToCartesian3(wp.lon, wp.lat, wp.alt));
+          }
+          positions.push(
+            wgs84ToCartesian3(s.droneState.lon, s.droneState.lat, s.droneState.alt),
+          );
+          return positions;
+        }, false),
+        width: 7,
+        material: COLOR_PATH_DONE,
+        depthFailMaterial: COLOR_PATH_DONE,
+        arcType: Cesium.ArcType.GEODESIC,
+        clampToGround: false,
+      },
+    });
+
+    // 航点小标（青色点）—— disableDepthTestDistance 让相机背后也别出错；
+    // 用 EntityCollection 同步：跟着 mission.waypoints / scanPath 增删
+    // 简化做法：dataSource 起一组 ConstantPositionProperty entities，
+    // 重建时间复杂度 O(n)，FPV 期待 mission 不会频繁加点
+    const wpPointsCallbackId = setInterval(() => {
+      const m = missionRef.current;
+      const wps = m ? effectiveWaypoints(m) : [];
+      const existing = ds.entities.values.filter(
+        (e) => (e as unknown as { __fpvWp?: boolean }).__fpvWp,
+      );
+      if (existing.length === wps.length) return;
+      for (const e of existing) ds.entities.remove(e);
+      wps.forEach((wp) => {
+        const e = ds.entities.add({
+          position: wgs84ToCartesian3(wp.lon, wp.lat, wp.alt),
+          point: {
+            pixelSize: 8,
+            color: Cesium.Color.fromCssColorString('#00d2c0'),
+            outlineColor: Cesium.Color.fromCssColorString('#0c0d10'),
+            outlineWidth: 2,
+            disableDepthTestDistance: Number.POSITIVE_INFINITY,
+          },
+        });
+        (e as unknown as { __fpvWp: boolean }).__fpvWp = true;
+      });
+    }, 500);
+
+    // mapping 多边形边界（fill + outline polyline）
+    ds.entities.add({
+      polygon: {
+        hierarchy: new Cesium.CallbackProperty(() => {
+          const m = missionRef.current;
+          if (!m || m.type !== 'mapping' || !m.polygon || m.polygon.length < 3) {
+            return new Cesium.PolygonHierarchy([]);
+          }
+          return new Cesium.PolygonHierarchy(
+            m.polygon.map((v) => wgs84ToCartesian3(v.lon, v.lat, v.alt)),
+          );
+        }, false),
+        material: Cesium.Color.fromCssColorString('#ffd24a').withAlpha(0.12),
+        perPositionHeight: true,
+      },
+    });
+    ds.entities.add({
+      polyline: {
+        positions: new Cesium.CallbackProperty(() => {
+          const m = missionRef.current;
+          if (!m || m.type !== 'mapping' || !m.polygon || m.polygon.length < 2) return [];
+          const arr = m.polygon.map((v) => wgs84ToCartesian3(v.lon, v.lat, v.alt));
+          if (m.polygon.length >= 3) arr.push(arr[0]); // 闭合
+          return arr;
+        }, false),
+        width: 2,
+        material: COLOR_POLY_OUTLINE,
+        depthFailMaterial: COLOR_POLY_OUTLINE,
+        arcType: Cesium.ArcType.GEODESIC,
+        clampToGround: false,
+      },
+    });
+
     return () => {
+      clearInterval(wpPointsCallbackId);
       viewer.destroy();
       viewerRef.current = null;
     };
@@ -88,7 +201,8 @@ export function FpvViewer() {
       // 取当前段终点 waypoint 的云台俯仰（相机朝下/朝前），找不到就 -10°
       const m = missionRef.current;
       const segIdx = state.currentSegmentIndex;
-      const toWp = m?.waypoints[segIdx + 1] ?? m?.waypoints[segIdx];
+      const wps = m ? effectiveWaypoints(m) : [];
+      const toWp = wps[segIdx + 1] ?? wps[segIdx];
       const pitchDeg = toWp?.pitch ?? -10;
       v.camera.setView({
         destination: wgs84ToCartesian3(d.lon, d.lat, d.alt),
