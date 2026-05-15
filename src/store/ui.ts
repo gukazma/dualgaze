@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-export type RightSheetTab = 'waypoints' | 'config' | 'actions';
+export type RightSheetTab = 'waypoints' | 'config' | 'actions' | 'scan';
 export type LibrarySort = 'updated_desc' | 'updated_asc' | 'name';
 export type MapView = '3d' | '2d';
 

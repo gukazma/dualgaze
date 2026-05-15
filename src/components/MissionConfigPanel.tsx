@@ -4,6 +4,7 @@ import {
   Flag,
   ShieldAlert,
   Camera,
+  Grid3x3,
   RotateCcw,
 } from 'lucide-react';
 import { ScrollArea } from './ui/scroll-area';
@@ -17,12 +18,14 @@ import {
 } from './ui/select';
 import { useCurrentMission, useMissionsStore } from '../store/missions';
 import {
+  MAPPING_DEFAULTS,
   MISSION_DEFAULTS,
   type ExitOnRCLost,
   type FinishAction,
   type FlyToWaylineMode,
   type GlobalCameraAction,
   type HeightMode,
+  type MappingScanParams,
   type Mission,
   type RCLostAction,
 } from '../types/mission';
@@ -38,6 +41,7 @@ import { cn } from '../lib/utils';
 export function MissionConfigPanel() {
   const mission = useCurrentMission();
   const updateMission = useMissionsStore((s) => s.updateMission);
+  const updateScanParams = useMissionsStore((s) => s.updateScanParams);
 
   if (!mission) {
     return (
@@ -47,12 +51,23 @@ export function MissionConfigPanel() {
     );
   }
 
+  const isMapping = mission.type === 'mapping';
+  const scanParams = mission.scanParams ?? MAPPING_DEFAULTS;
+
   const set = <K extends keyof Mission>(key: K, value: Mission[K]): void => {
     updateMission(mission.id, { [key]: value } as Pick<Mission, K>);
   };
 
+  const setScan = <K extends keyof MappingScanParams>(
+    key: K,
+    value: MappingScanParams[K],
+  ): void => {
+    updateScanParams({ [key]: value } as Partial<MappingScanParams>);
+  };
+
   const resetDefaults = (): void => {
     updateMission(mission.id, { ...MISSION_DEFAULTS });
+    if (isMapping) updateScanParams({ ...MAPPING_DEFAULTS });
   };
 
   return (
@@ -82,6 +97,74 @@ export function MissionConfigPanel() {
               />
             </RowStack>
           </Card>
+
+          {isMapping && (
+            <Card
+              icon={<Grid3x3 className="h-3 w-3 text-accent-cyan" />}
+              title="扫描参数"
+            >
+              <RowInline label="航线间距">
+                <NumField
+                  value={scanParams.spacing}
+                  unit="m"
+                  step={1}
+                  min={5}
+                  max={200}
+                  onChange={(v) => setScan('spacing', v)}
+                />
+              </RowInline>
+              <RowInline label="朝向角">
+                <NumField
+                  value={scanParams.direction}
+                  unit="°"
+                  step={1}
+                  min={0}
+                  max={359}
+                  onChange={(v) => setScan('direction', v)}
+                />
+              </RowInline>
+              <RowInline label="边距">
+                <NumField
+                  value={scanParams.margin}
+                  unit="m"
+                  step={1}
+                  min={0}
+                  max={50}
+                  onChange={(v) => setScan('margin', v)}
+                />
+              </RowInline>
+              <RowInline label="云台俯仰">
+                <NumField
+                  value={scanParams.gimbalPitchAngle}
+                  unit="°"
+                  step={1}
+                  min={-90}
+                  max={30}
+                  onChange={(v) => setScan('gimbalPitchAngle', v)}
+                />
+              </RowInline>
+              <RowInline label="横向重叠">
+                <NumField
+                  value={Math.round(scanParams.overlapH * 100)}
+                  unit="%"
+                  step={1}
+                  min={0}
+                  max={90}
+                  onChange={(v) => setScan('overlapH', v / 100)}
+                />
+              </RowInline>
+              <RowInline label="纵向重叠">
+                <NumField
+                  value={Math.round(scanParams.overlapW * 100)}
+                  unit="%"
+                  step={1}
+                  min={0}
+                  max={90}
+                  onChange={(v) => setScan('overlapW', v / 100)}
+                />
+              </RowInline>
+            </Card>
+          )}
 
           <Card icon={<PlaneTakeoff className="h-3 w-3 text-accent" />} title="起降">
             <RowInline label="安全起飞高度">

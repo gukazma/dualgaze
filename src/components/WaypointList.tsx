@@ -18,7 +18,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { ScrollArea } from './ui/scroll-area';
 import { useCurrentMission, useMissionsStore } from '../store/missions';
-import type { Waypoint } from '../types/mission';
+import type { PolygonVertex, Waypoint } from '../types/mission';
 import { cn } from '../lib/utils';
 
 export function WaypointList() {
@@ -49,6 +49,11 @@ export function WaypointList() {
         <span>左侧选择或新建任务</span>
       </div>
     );
+  }
+
+  // mapping 分支：顶点列表（独立组件，不复用 sortable 路径）
+  if (mission.type === 'mapping') {
+    return <PolygonVertexList vertices={mission.polygon ?? []} />;
   }
 
   if (mission.waypoints.length === 0) {
@@ -276,6 +281,87 @@ function NumField({ label, value, decimals, onChange }: NumFieldProps) {
           'focus-visible:ring-1 focus-visible:ring-accent',
         )}
       />
+    </div>
+  );
+}
+
+// ============ mapping 分支：多边形顶点列表 ============
+
+function PolygonVertexList({ vertices }: { vertices: PolygonVertex[] }) {
+  const updatePolygonVertex = useMissionsStore((s) => s.updatePolygonVertex);
+  const removePolygonVertex = useMissionsStore((s) => s.removePolygonVertex);
+  const setPolygon = useMissionsStore((s) => s.setPolygon);
+
+  if (vertices.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 p-6 text-center text-[12px] text-text-secondary">
+        <span>地图上左键加多边形顶点</span>
+        <span className="text-text-muted">≥3 顶点后右键切到编辑模式</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full flex-col">
+      <ScrollArea className="flex-1">
+        <div className="flex flex-col gap-2 p-2.5">
+          {vertices.map((v, idx) => (
+            <div
+              key={idx}
+              className="flex flex-col gap-2 rounded-md border border-border-subtle bg-bg-surface p-2.5"
+            >
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-[10px] font-bold text-bg">
+                    {idx + 1}
+                  </span>
+                  <span className="text-[11px] font-semibold text-text-secondary">顶点</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => removePolygonVertex(idx)}
+                  className="rounded p-0.5 text-text-secondary hover:bg-bg-input hover:text-accent-danger"
+                  title="删除顶点"
+                >
+                  <Trash2 className="h-3 w-3" />
+                </button>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <NumField
+                  label="经度"
+                  value={v.lon}
+                  decimals={6}
+                  onChange={(val) => updatePolygonVertex(idx, { lon: val })}
+                />
+                <NumField
+                  label="纬度"
+                  value={v.lat}
+                  decimals={6}
+                  onChange={(val) => updatePolygonVertex(idx, { lat: val })}
+                />
+                <NumField
+                  label="高度 m"
+                  value={v.alt}
+                  decimals={1}
+                  onChange={(val) => updatePolygonVertex(idx, { alt: val })}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+      </ScrollArea>
+      <div className="flex gap-2 border-t border-border-subtle p-2.5">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setPolygon([])}
+          className="flex-1 gap-1.5 text-accent-danger hover:text-accent-danger"
+          disabled={vertices.length === 0}
+        >
+          <Trash className="h-3 w-3" />
+          清空多边形
+        </Button>
+      </div>
     </div>
   );
 }
