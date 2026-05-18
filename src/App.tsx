@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { CesiumViewer } from './features/cesium/CesiumViewer';
 import { useCesiumViewer } from './features/cesium/CesiumContext';
 import { useFlyToMission } from './features/cesium/useFlyToMission';
@@ -21,7 +21,7 @@ import { FacadeSafetyBadge } from './components/FacadeSafetyBadge';
 import { useTilesetLoadingStore } from './store/tileset-loading';
 import { useSimulationLoop } from './features/simulation/SimulationLoop';
 import { TopBar } from './components/TopBar';
-import { MissionLibrary, loadBavariaDemo } from './components/MissionLibrary';
+import { MissionLibrary } from './components/MissionLibrary';
 import { CreateMissionModal } from './components/CreateMissionModal';
 import { RightSheet } from './components/RightSheet';
 import { PlaybackBar } from './components/PlaybackBar';
@@ -29,7 +29,7 @@ import { FpvWindow } from './components/FpvWindow';
 import { ViewToggle } from './components/ViewToggle';
 import { Toaster } from './components/ui/sonner';
 import { useMapViewSync } from './features/cesium/useMapViewSync';
-import { useCurrentMission, useMissionsStore } from './store/missions';
+import { useCurrentMission } from './store/missions';
 import { useSimulationStore } from './store/simulation';
 
 export function App() {
@@ -52,18 +52,9 @@ export function App() {
   const showQuickAdd =
     isFacade && facadeFaceCount >= 1 && pickerMode !== 'facade-draw';
 
-  // 首次启动：persist 还原后 missions 仍为空 → 自动 seed patrol Bavaria 演示一次
-  const seededRef = useRef(false);
-  useEffect(() => {
-    if (seededRef.current) return;
-    seededRef.current = true;
-    // 给 zustand persist 一点时间 rehydrate
-    const t = setTimeout(() => {
-      const missionsCount = useMissionsStore.getState().missions.length;
-      if (missionsCount === 0) loadBavariaDemo();
-    }, 200);
-    return () => clearTimeout(t);
-  }, []);
+  // v3 以后不再自动 seed Bavaria 演示 mission：新用户首启进入纯净空状态，
+  // 演示由 MissionLibrary 顶部的两个 demo 按钮显式触发（用户主动）。
+  // (旧逻辑保留在 git log 里，需要重新启用就把 if-empty → loadBavariaDemo 加回来)
 
   return (
     <div className="flex h-full w-full flex-col bg-bg text-text-primary">

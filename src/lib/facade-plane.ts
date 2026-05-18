@@ -22,6 +22,16 @@ export function fitPlaneFromCorners(corners: FacadeCorner[]): FacadePlane | null
   if (corners.length !== 4) return null;
   const pts = corners.map((c) => wgs84ToCartesian3(c.lon, c.lat, c.alt));
 
+  // 退化检查：任意两两角点距离过小（< 0.5m）说明用户重复点了同一位置，
+  // SVD 仍能拟合但结果是垃圾（A2b 半重合 case）→ 直接返回 null 让 picker 报 error
+  const MIN_PAIR_DIST = 0.5;
+  for (let i = 0; i < 4; i++) {
+    for (let j = i + 1; j < 4; j++) {
+      const dx = pts[i].x - pts[j].x, dy = pts[i].y - pts[j].y, dz = pts[i].z - pts[j].z;
+      if (Math.sqrt(dx * dx + dy * dy + dz * dz) < MIN_PAIR_DIST) return null;
+    }
+  }
+
   // 中心
   const cx = (pts[0].x + pts[1].x + pts[2].x + pts[3].x) / 4;
   const cy = (pts[0].y + pts[1].y + pts[2].y + pts[3].y) / 4;

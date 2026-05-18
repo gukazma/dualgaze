@@ -1,6 +1,7 @@
-import { CheckCircle2, AlertCircle, TriangleAlert, X } from 'lucide-react';
+import { CheckCircle2, AlertCircle, TriangleAlert, X, Check } from 'lucide-react';
 import { useFacadePickerStore } from '../store/facade-picker';
 import { useUiStore } from '../store/ui';
+import { useMissionsStore } from '../store/missions';
 import { cn } from '../lib/utils';
 
 /**
@@ -14,6 +15,7 @@ import { cn } from '../lib/utils';
 export function FacadePickerHud() {
   const pickerMode = useUiStore((s) => s.pickerMode);
   const setPickerMode = useUiStore((s) => s.setPickerMode);
+  const commitFacadePreviewIfAny = useMissionsStore((s) => s.commitFacadePreviewIfAny);
   const state = useFacadePickerStore((s) => s.state);
 
   if (pickerMode !== 'facade-draw') return null;
@@ -92,6 +94,17 @@ export function FacadePickerHud() {
         <span className="ml-1 flex items-center gap-1">
           {isPreview && (
             <>
+              <button
+                type="button"
+                onClick={() => {
+                  commitFacadePreviewIfAny();
+                }}
+                className="flex items-center gap-1 rounded-sm border border-accent-cyan bg-accent-cyan/10 px-2 py-0.5 text-[11px] font-bold text-accent-cyan hover:bg-accent-cyan/20"
+                title="保存当前立面（Enter 同效）"
+              >
+                <Check className="h-3 w-3" />
+                保存
+              </button>
               <ShortcutChip label="F" hint="翻转法向" />
               <ShortcutChip label="Enter" hint="保存" />
             </>
