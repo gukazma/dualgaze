@@ -114,16 +114,20 @@ export function FpvViewer() {
       const state = useSimulationStore.getState();
       const d = state.droneState;
       if (!d) return;
-      // 取当前段终点 waypoint 的云台俯仰（相机朝下/朝前），找不到就 -10°
+      // 取当前段终点 waypoint 的相机朝向 + 俯仰
+      // - patrol/mapping：wp.heading 通常 = 飞行方向，跟 d.heading 一致
+      // - facade：wp.heading 是相机看墙方向，wp.gimbalYaw 同步（FPV 应该看墙不看飞行方向）
+      // 优先 wp.gimbalYaw（明确的相机 yaw），fallback wp.heading，再 fallback drone 飞行方向
       const m = missionRef.current;
       const segIdx = state.currentSegmentIndex;
       const wps = m ? effectiveWaypoints(m) : [];
       const toWp = wps[segIdx + 1] ?? wps[segIdx];
       const pitchDeg = toWp?.pitch ?? -10;
+      const headingDeg = toWp?.gimbalYaw ?? toWp?.heading ?? d.heading;
       v.camera.setView({
         destination: wgs84ToCartesian3(d.lon, d.lat, d.alt),
         orientation: {
-          heading: Cesium.Math.toRadians(d.heading),
+          heading: Cesium.Math.toRadians(headingDeg),
           pitch: Cesium.Math.toRadians(pitchDeg),
           roll: 0,
         },
