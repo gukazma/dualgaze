@@ -7,7 +7,7 @@ import { wgs84ToCartesian3 } from '../../lib/coord';
 import type { Waypoint } from '../../types/mission';
 import { effectiveWaypoints } from '../simulation/SimulationLoop';
 
-const FAR_METERS = 6;
+const FAR_METERS = 3;
 const ASPECT = 4 / 3;
 
 /**

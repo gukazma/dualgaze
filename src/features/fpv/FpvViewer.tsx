@@ -6,6 +6,7 @@ import { useCurrentMission } from '../../store/missions';
 import { arcgisWorldImageryOptions } from '../../lib/amap';
 import { wgs84ToCartesian3 } from '../../lib/coord';
 import { effectiveWaypoints } from '../simulation/SimulationLoop';
+import { loadTileset, unloadTileset } from '../../lib/tileset-source';
 
 /**
  * 独立 Cesium scene 渲染无人机第一人称视角。
@@ -76,6 +77,34 @@ export function FpvViewer() {
       viewerRef.current = null;
     };
   }, []);
+
+  // 加载 facade tileset 到 FPV scene（独立于主 viewer）—— 否则 FPV 看不到 3DTiles 模型
+  const tilesetSource =
+    mission?.type === 'facade' ? mission.tilesetSource : undefined;
+  const sourceKey = tilesetSource
+    ? `${tilesetSource.kind}::${tilesetSource.url ?? ''}::${tilesetSource.sessionId ?? ''}`
+    : '';
+  useEffect(() => {
+    const v = viewerRef.current;
+    if (!v || !tilesetSource) return;
+    let cancelled = false;
+    let tileset: Cesium.Cesium3DTileset | null = null;
+    loadTileset(v, tilesetSource)
+      .then((ts) => {
+        if (cancelled) {
+          unloadTileset(v, ts);
+          return;
+        }
+        tileset = ts;
+      })
+      .catch(() => {
+        // FPV 加载失败静默 —— 主 viewer 会弹 toast，不重复
+      });
+    return () => {
+      cancelled = true;
+      if (tileset) unloadTileset(v, tileset);
+    };
+  }, [sourceKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 订阅 drone 位置 → setView
   useEffect(() => {
