@@ -7,8 +7,8 @@
 
 export type MissionType = 'patrol' | 'mapping' | 'strip' | 'facade';
 
-/** v2 启用 'patrol' + 'mapping'；strip / facade 仍 disabled */
-export const ENABLED_MISSION_TYPES: ReadonlySet<MissionType> = new Set(['patrol', 'mapping']);
+/** v3 启用 'patrol' + 'mapping' + 'facade'；strip 仍 disabled */
+export const ENABLED_MISSION_TYPES: ReadonlySet<MissionType> = new Set(['patrol', 'mapping', 'facade']);
 
 export interface MissionTypeMeta {
   id: MissionType;
@@ -43,9 +43,9 @@ export const MISSION_TYPE_CATALOG: ReadonlyArray<MissionTypeMeta> = [
   {
     id: 'facade',
     label: '贴近摄影航线',
-    description: '点云驱动 · 法线采样',
+    description: '3DTiles 立面 · 多面 S 扫描',
     iconName: 'scan-eye',
-    disabled: true,
+    disabled: false,
   },
 ];
 
@@ -67,6 +67,16 @@ export interface PayloadModel {
   /** DJI WPML payloadEnumValue */
   payloadEnumValue: number;
   payloadPositionIndex: number;
+  /** v3 facade GSD 模式用：传感器宽（mm），可选 */
+  sensorWidthMm?: number;
+  /** 传感器高（mm） */
+  sensorHeightMm?: number;
+  /** 焦距（mm，真实焦距非 35mm 等效） */
+  focalLengthMm?: number;
+  /** 图像宽像素 */
+  imageWidthPx?: number;
+  /** 图像高像素 */
+  imageHeightPx?: number;
 }
 
 /** v1 内置型号；后续可扩到 ThirdParty / 配置 */
@@ -80,16 +90,21 @@ export const DRONE_CATALOG: ReadonlyArray<DroneModel> = [
   { id: 'm350', label: 'DJI Matrice 350 RTK', droneEnumValue: 89, droneSubEnumValue: 0, compatiblePayloads: ['h20', 'h20t', 'h20n', 'p1', 'l1', 'l2'] },
 ];
 
+/**
+ * v3 facade GSD 模式：常见 DJI 相机的传感器/焦距/像素参数。
+ * 数据来自 DJI 官方 spec / WPML 文档；GSD = standoff × sensorWidth / (focal × imageWidth)。
+ * 没填的相机（如 H20N 夜视）GSD 模式 fallback 到 manual mode。
+ */
 export const PAYLOAD_CATALOG: ReadonlyArray<PayloadModel> = [
-  { id: 'm3e-cam', label: 'M3E 主云台相机', payloadEnumValue: 80, payloadPositionIndex: 0 },
-  { id: 'm3t-cam', label: 'M3T 主云台相机', payloadEnumValue: 81, payloadPositionIndex: 0 },
-  { id: 'm3m-cam', label: 'M3M 多光谱相机', payloadEnumValue: 80, payloadPositionIndex: 0 },
-  { id: 'm30-cam', label: 'M30 主云台相机', payloadEnumValue: 52, payloadPositionIndex: 0 },
-  { id: 'm30t-cam', label: 'M30T 主云台 (红外)', payloadEnumValue: 53, payloadPositionIndex: 0 },
-  { id: 'h20', label: 'H20 (RGB)', payloadEnumValue: 42, payloadPositionIndex: 0 },
-  { id: 'h20t', label: 'H20T (RGB+红外)', payloadEnumValue: 43, payloadPositionIndex: 0 },
+  { id: 'm3e-cam', label: 'M3E 主云台相机', payloadEnumValue: 80, payloadPositionIndex: 0, sensorWidthMm: 17.3, sensorHeightMm: 13.0, focalLengthMm: 12.29, imageWidthPx: 5280, imageHeightPx: 3956 },
+  { id: 'm3t-cam', label: 'M3T 主云台相机', payloadEnumValue: 81, payloadPositionIndex: 0, sensorWidthMm: 6.4, sensorHeightMm: 4.8, focalLengthMm: 4.4, imageWidthPx: 4000, imageHeightPx: 3000 },
+  { id: 'm3m-cam', label: 'M3M 多光谱相机', payloadEnumValue: 80, payloadPositionIndex: 0, sensorWidthMm: 17.3, sensorHeightMm: 13.0, focalLengthMm: 12.29, imageWidthPx: 5280, imageHeightPx: 3956 },
+  { id: 'm30-cam', label: 'M30 主云台相机', payloadEnumValue: 52, payloadPositionIndex: 0, sensorWidthMm: 6.4, sensorHeightMm: 4.8, focalLengthMm: 4.5, imageWidthPx: 4000, imageHeightPx: 3000 },
+  { id: 'm30t-cam', label: 'M30T 主云台 (红外)', payloadEnumValue: 53, payloadPositionIndex: 0, sensorWidthMm: 6.4, sensorHeightMm: 4.8, focalLengthMm: 4.5, imageWidthPx: 4000, imageHeightPx: 3000 },
+  { id: 'h20', label: 'H20 (RGB)', payloadEnumValue: 42, payloadPositionIndex: 0, sensorWidthMm: 6.4, sensorHeightMm: 4.8, focalLengthMm: 4.5, imageWidthPx: 5184, imageHeightPx: 3888 },
+  { id: 'h20t', label: 'H20T (RGB+红外)', payloadEnumValue: 43, payloadPositionIndex: 0, sensorWidthMm: 6.4, sensorHeightMm: 4.8, focalLengthMm: 4.5, imageWidthPx: 5184, imageHeightPx: 3888 },
   { id: 'h20n', label: 'H20N (夜视)', payloadEnumValue: 61, payloadPositionIndex: 0 },
-  { id: 'p1', label: 'P1 测绘相机', payloadEnumValue: 50, payloadPositionIndex: 0 },
+  { id: 'p1', label: 'P1 测绘相机', payloadEnumValue: 50, payloadPositionIndex: 0, sensorWidthMm: 35.9, sensorHeightMm: 24.0, focalLengthMm: 35, imageWidthPx: 8192, imageHeightPx: 5460 },
   { id: 'l1', label: 'L1 激光雷达', payloadEnumValue: 41, payloadPositionIndex: 0 },
   { id: 'l2', label: 'L2 激光雷达', payloadEnumValue: 90, payloadPositionIndex: 0 },
 ];
@@ -122,6 +137,12 @@ export interface Waypoint {
   pitch: number;
   /** 水平视场角 ° (默认 60) */
   fov: number;
+  /** v3 facade 用：云台 yaw ° (0=正北，顺时针)；patrol/mapping 不填走 0 兼容 */
+  gimbalYaw?: number;
+  /** v3 facade 用：raycast 验距标记 — 相机前方 < standoff 有障碍，飞过去可能撞 */
+  unsafe?: boolean;
+  /** v3 facade 用：raycast 命中障碍的距离（米）；用于 hover tooltip 显示 */
+  obstacleDistanceM?: number;
   /** 抵达此航点时执行的动作组（拍照/录像/悬停 etc.） */
   actions: WaypointAction[];
 }
@@ -156,6 +177,99 @@ export interface PolygonVertex {
   alt: number;
 }
 
+// ---------- v3 Facade Mission ----------
+
+/** facade 立面角点（WGS84），用户拾取的 4 个角 */
+export interface FacadeCorner {
+  lon: number;
+  lat: number;
+  alt: number;
+}
+
+/** facade 立面拟合平面（ECEF 参数；由 fitPlaneFromCorners 算出） */
+export interface FacadePlane {
+  /** 平面中心点（Cartesian3） */
+  origin: { x: number; y: number; z: number };
+  /** 法向（单位向量，远离墙面方向） */
+  normal: { x: number; y: number; z: number };
+  /** 平面内 u 轴（水平方向单位向量） */
+  uAxis: { x: number; y: number; z: number };
+  /** 平面内 v 轴（垂直方向单位向量） */
+  vAxis: { x: number; y: number; z: number };
+  /** u 方向尺寸 m */
+  width: number;
+  /** v 方向尺寸 m */
+  height: number;
+}
+
+/**
+ * facade 扫描参数（每个 face 独立）。
+ *
+ * 两种模式：
+ * - `smart`：用户调 gsdMm + overlapFront/overlapSide，UI 自动反推 standoff / spacingH / spacingV
+ *   （需要 payload 有 sensor/focal 字段；没填 fallback 到 manual）
+ * - `manual`（默认）：直接填 standoff/spacingH/spacingV，UI 不动 gsd/overlap
+ *
+ * 两种模式存到同一个对象，标 `mode` 区分；切换模式时 UI 把当前数值反算/正算保留语义。
+ */
+export interface FacadeScanParams {
+  /** 模式：smart=用 GSD/overlap 反推；manual=直填 standoff/spacing */
+  mode: 'smart' | 'manual';
+  /** 拍摄距离 m, 3–50, 默认 8（manual 模式直填；smart 模式由 GSD 反推） */
+  standoff: number;
+  /** 水平网格间距 m, 0.5–20, 默认 3（同上） */
+  spacingH: number;
+  /** 垂直网格间距 m, 0.5–20, 默认 3 */
+  spacingV: number;
+  /** u 方向缩进 m, 默认 0 */
+  marginU: number;
+  /** v 方向缩进 m, 默认 0 */
+  marginV: number;
+  /** S 主方向（先水平扫还是先垂直扫） */
+  marchOrder: 'horizontal' | 'vertical';
+  /** 法向反转开关（处理朝室内/室外的歧义） */
+  flipNormal: boolean;
+  /** 飞行速度 m/s, 默认 3 */
+  speed: number;
+  /** smart 模式：目标 GSD（毫米），默认 2（精细建模），范围 1–30 */
+  gsdMm: number;
+  /** smart 模式：航向重叠率 0–1，默认 0.8 */
+  overlapFront: number;
+  /** smart 模式：旁向重叠率 0–1，默认 0.8 */
+  overlapSide: number;
+}
+
+/** facade 单个立面（一个 mission 可有多个） */
+export interface FacadeFace {
+  id: string;
+  /** 用户可改的名字，如 "南立面" */
+  name: string;
+  /** 4 个角点（用户依次点的顺序，按 0→1→2→3→0 闭合） */
+  corners: FacadeCorner[];
+  /** corners 拟合出的平面；picker 完成或 corners 变化时算 */
+  plane?: FacadePlane;
+  /** 每个 face 独立参数 */
+  params: FacadeScanParams;
+  /** 算出的扫描航点（params/corners/plane 变化时重算） */
+  scanPath?: Waypoint[];
+  /** 在总 mission scanPath 中是否参与（关掉单飞某面用） */
+  enabled: boolean;
+}
+
+/** facade 3DTiles 数据源 */
+export interface TilesetSource {
+  /** http = Cesium3DTileset.fromUrl；localDir = M17 webkitdirectory + Resource 拦截 */
+  kind: 'http' | 'localDir';
+  /** HTTP 时是完整 URL；localDir 时是入口 file 的相对路径 */
+  url?: string;
+  /** localDir 关联的内存 session ID（持久化后丢失，需用户重选目录） */
+  sessionId?: string;
+  /** 'tileset.json' 路径（localDir 用，识别 root） */
+  rootFile?: string;
+  /** localDir 时文件总数（仅 UI 显示） */
+  fileCount?: number;
+}
+
 export interface Mission {
   id: string;
   name: string;
@@ -175,6 +289,10 @@ export interface Mission {
   scanPath?: Waypoint[];
   /** mapping 类型：扫描参数 */
   scanParams?: MappingScanParams;
+  /** v3 facade 类型：多个立面，每个独立 corners/plane/params/scanPath */
+  facadeFaces?: FacadeFace[];
+  /** v3 facade 类型：3DTiles 数据源（HTTP URL 或本地目录 session） */
+  tilesetSource?: TilesetSource;
   /** 安全起飞高度 m（执行任务前先爬升到此高度才进入航线，DJI WPML takeOffSecurityHeight） */
   takeOffSecurityHeight: number;
   /** 飞向首航点模式：安全模式（先到首航点正上方再下降）/ 点对点直飞 */
@@ -217,6 +335,38 @@ export const MAPPING_DEFAULTS: MappingScanParams = {
   overlapW: 0.7,
 };
 
+/** v3 facade 扫描参数默认值 */
+export const FACADE_DEFAULTS: FacadeScanParams = {
+  mode: 'manual',
+  standoff: 8,
+  spacingH: 3,
+  spacingV: 3,
+  marginU: 0,
+  marginV: 0,
+  marchOrder: 'horizontal',
+  flipNormal: false,
+  speed: 3,
+  gsdMm: 2,
+  overlapFront: 0.8,
+  overlapSide: 0.8,
+};
+
+/** facade 智能模式预设方案 */
+export interface FacadePreset {
+  id: 'fine' | 'general' | 'quick';
+  label: string;
+  description: string;
+  gsdMm: number;
+  overlapFront: number;
+  overlapSide: number;
+}
+
+export const FACADE_PRESETS: ReadonlyArray<FacadePreset> = [
+  { id: 'fine', label: '精细建模', description: 'GSD 2mm · 80/80% · 适合文物 / 细节', gsdMm: 2, overlapFront: 0.8, overlapSide: 0.8 },
+  { id: 'general', label: '一般检测', description: 'GSD 5mm · 75/75% · 适合外墙缺陷扫描', gsdMm: 5, overlapFront: 0.75, overlapSide: 0.75 },
+  { id: 'quick', label: '快速浏览', description: 'GSD 10mm · 65/65% · 适合先看一遍', gsdMm: 10, overlapFront: 0.65, overlapSide: 0.65 },
+];
+
 // ---------- Factory ----------
 
 let _waypointSeq = 0;
@@ -245,12 +395,17 @@ export function createBlankMission(init: {
     base.scanPath = [];
     base.scanParams = { ...MAPPING_DEFAULTS };
   }
+  if (init.type === 'facade') {
+    base.facadeFaces = [];
+    base.tilesetSource = undefined;
+  }
   return base;
 }
 
 /**
  * persist 迁移：补齐 MissionConfig 字段（v2）+ 每 waypoint 补 actions=[]（v3）
  * + mapping 字段 polygon/scanPath/scanParams 兜底（v4）
+ * + facade 字段 facadeFaces/tilesetSource 兜底（v5）
  */
 export function migrateMissionToLatest(m: Partial<Mission> & Pick<Mission, 'id' | 'name' | 'type' | 'droneId' | 'payloadId' | 'waypoints' | 'createdAt' | 'updatedAt'>): Mission {
   const waypoints = m.waypoints.map((wp) => ({
@@ -268,6 +423,20 @@ export function migrateMissionToLatest(m: Partial<Mission> & Pick<Mission, 'id' 
       ? m.scanPath.map((wp) => ({ ...wp, actions: Array.isArray(wp.actions) ? wp.actions : [] }))
       : [];
     next.scanParams = m.scanParams ?? { ...MAPPING_DEFAULTS };
+  }
+  if (next.type === 'facade') {
+    next.facadeFaces = Array.isArray(m.facadeFaces)
+      ? m.facadeFaces.map((f) => ({
+          ...f,
+          // 老 face 的 params 可能缺 mode/gsdMm/overlap*（v5 之前的 schema），用 FACADE_DEFAULTS 合并兜底
+          params: { ...FACADE_DEFAULTS, ...(f.params ?? {}) },
+          enabled: typeof f.enabled === 'boolean' ? f.enabled : true,
+          scanPath: Array.isArray(f.scanPath)
+            ? f.scanPath.map((wp) => ({ ...wp, actions: Array.isArray(wp.actions) ? wp.actions : [] }))
+            : undefined,
+        }))
+      : [];
+    next.tilesetSource = m.tilesetSource;
   }
   return next;
 }

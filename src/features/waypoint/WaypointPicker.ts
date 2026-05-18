@@ -1,5 +1,6 @@
 import * as Cesium from 'cesium';
-import { cartesian3ToWgs84, wgs84ToCartesian3 } from '../../lib/coord';
+import { wgs84ToCartesian3 } from '../../lib/coord';
+import { pickWgs84At } from '../../lib/cesium-pick';
 import { useMissionsStore } from '../../store/missions';
 import type { Waypoint } from '../../types/mission';
 
@@ -162,25 +163,7 @@ export class WaypointPicker {
   private pickWgs84At(
     screenPos: Cesium.Cartesian2,
   ): { lon: number; lat: number; alt: number } | null {
-    const ray = this.viewer.camera.getPickRay(screenPos);
-    if (!ray) return null;
-    const sceneAny = this.viewer.scene as unknown as {
-      pickFromRay: (
-        ray: Cesium.Ray,
-        exclude?: object[],
-      ) => { position?: Cesium.Cartesian3 } | undefined;
-    };
-    const result = sceneAny.pickFromRay(ray);
-    const cart = result?.position;
-    if (cart && Number.isFinite(cart.x)) {
-      return cartesian3ToWgs84(cart);
-    }
-    // pickFromRay 没命中（globe 关 / 没 tileset）→ fallback：射线打 globe
-    const cartesianGlobe = this.viewer.scene.globe.pick(ray, this.viewer.scene);
-    if (cartesianGlobe && Number.isFinite(cartesianGlobe.x)) {
-      return cartesian3ToWgs84(cartesianGlobe);
-    }
-    return null;
+    return pickWgs84At(this.viewer, screenPos);
   }
 
   // ----- camera lock during drag -----

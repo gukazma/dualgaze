@@ -23,9 +23,19 @@ import {
   type WaypointAction,
 } from '../types/mission';
 
-/** 飞行航点列表：mapping 用 scanPath，patrol 用 waypoints */
+/** 飞行航点列表：mapping 用 scanPath，facade 用所有 enabled face 拼接，patrol 用 waypoints */
 function flightWaypoints(mission: Mission): Waypoint[] {
-  return mission.type === 'mapping' ? (mission.scanPath ?? []) : mission.waypoints;
+  if (mission.type === 'mapping') return mission.scanPath ?? [];
+  if (mission.type === 'facade') {
+    const out: Waypoint[] = [];
+    let idx = 0;
+    for (const f of mission.facadeFaces ?? []) {
+      if (!f.enabled) continue;
+      for (const wp of f.scanPath ?? []) out.push({ ...wp, index: idx++ });
+    }
+    return out;
+  }
+  return mission.waypoints;
 }
 
 const WPML_NS = 'http://www.dji.com/wpmz/1.0.6';
@@ -114,7 +124,7 @@ function buildTemplatePlacemark(wp: Waypoint, index: number): string {
         </wpml:waypointHeadingParam>
         <wpml:waypointGimbalHeadingParam>
           <wpml:waypointGimbalPitchAngle>${wp.pitch}</wpml:waypointGimbalPitchAngle>
-          <wpml:waypointGimbalYawAngle>0</wpml:waypointGimbalYawAngle>
+          <wpml:waypointGimbalYawAngle>${wp.gimbalYaw ?? 0}</wpml:waypointGimbalYawAngle>
         </wpml:waypointGimbalHeadingParam>
         <wpml:dualgazeFov>${wp.fov}</wpml:dualgazeFov>
       </Placemark>`;
@@ -217,7 +227,7 @@ function buildWaylinePlacemark(
         <wpml:useStraightLine>1</wpml:useStraightLine>
         <wpml:waypointGimbalHeadingParam>
           <wpml:waypointGimbalPitchAngle>${wp.pitch}</wpml:waypointGimbalPitchAngle>
-          <wpml:waypointGimbalYawAngle>0</wpml:waypointGimbalYawAngle>
+          <wpml:waypointGimbalYawAngle>${wp.gimbalYaw ?? 0}</wpml:waypointGimbalYawAngle>
         </wpml:waypointGimbalHeadingParam>
         <wpml:waypointWorkType>0</wpml:waypointWorkType>
         <wpml:isRisky>0</wpml:isRisky>

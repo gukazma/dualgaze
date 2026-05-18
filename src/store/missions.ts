@@ -4,12 +4,17 @@ import {
   createAction as buildAction,
   createBlankMission,
   createWaypoint as buildWaypoint,
+  FACADE_DEFAULTS,
   MAPPING_DEFAULTS,
   migrateMissionToLatest,
+  type FacadeFace,
+  type FacadePlane,
+  type FacadeScanParams,
   type MappingScanParams,
   type Mission,
   type MissionType,
   type PolygonVertex,
+  type TilesetSource,
   type Waypoint,
   type WaypointAction,
   type WaypointActionType,
@@ -62,6 +67,23 @@ interface MissionsState {
   updateScanParams: (patch: Partial<MappingScanParams>) => void;
   /** 手动触发重算（一般 set/update 时自动；外部调用兜底） */
   recomputeScanPath: () => void;
+
+  // facade CRUD（针对 currentMission；要求 mission.type === 'facade'）
+  /** 设置 tileset 数据源（HTTP URL 或本地目录 session） */
+  setTilesetSource: (src: TilesetSource | undefined) => void;
+  /** 新增一个 face，传入 4 个角点 + 名字；params 默认 FACADE_DEFAULTS */
+  addFacadeFace: (init: { name: string; corners: FacadeFace['corners']; params?: Partial<FacadeScanParams> }) => string | null;
+  /** 更新某 face（如 name/enabled/corners/params 修改） */
+  updateFacadeFace: (faceId: string, patch: Partial<Omit<FacadeFace, 'id'>>) => void;
+  /** 仅更新某 face 的 params（自动触发该 face 重算） */
+  updateFacadeFaceParams: (faceId: string, patch: Partial<FacadeScanParams>) => void;
+  /** 删除某 face */
+  removeFacadeFace: (faceId: string) => void;
+  /**
+   * React 层（FacadePicker）算完 plane + scanPath 后写回。
+   * 因为 store 拿不到 viewer，所以算法在 React 层跑；store 这里只负责落地。
+   */
+  setFaceScanResult: (faceId: string, plane: FacadePlane | undefined, scanPath: Waypoint[] | undefined) => void;
 }
 
 const reindex = (waypoints: Waypoint[]): Waypoint[] =>
@@ -81,6 +103,27 @@ const withRecomputedScan = (m: Mission): Mission => {
     speed: m.globalSpeed,
   });
   return { ...m, scanPath: path };
+};
+
+let _faceIdSeq = 0;
+const newFaceId = (): string => `face_${Date.now().toString(36)}_${(++_faceIdSeq).toString(36)}`;
+
+/**
+ * facade mission：face 的 plane + scanPath 由 React 层（FacadePicker）算后通过
+ * `setFaceScanResult` 写回。store 本身不算（拿不到 viewer 做 raycast）。
+ *
+ * 这里只在 corners 变化等场景将 plane / scanPath 清空，提示 React 层重算。
+ * 对单纯 params/enabled/name 改动不动 scanPath（保留旧数据）。
+ */
+const invalidateFaceGeometry = (m: Mission, faceId: string): Mission => {
+  if (m.type !== 'facade') return m;
+  const faces = m.facadeFaces ?? [];
+  return {
+    ...m,
+    facadeFaces: faces.map((f) =>
+      f.id === faceId ? { ...f, plane: undefined, scanPath: undefined } : f,
+    ),
+  };
 };
 
 const touch = (m: Mission): Mission => ({ ...m, updatedAt: Date.now() });
@@ -267,11 +310,85 @@ export const useMissionsStore = create<MissionsState>()(
 
         recomputeScanPath: () =>
           updCurrent((m) => withRecomputedScan(m)),
+
+        // ===== facade =====
+
+        setTilesetSource: (src) =>
+          updCurrent((m) => ({ ...m, tilesetSource: src })),
+
+        addFacadeFace: (init) => {
+          const id = newFaceId();
+          const face: FacadeFace = {
+            id,
+            name: init.name,
+            corners: init.corners,
+            plane: undefined,
+            params: { ...FACADE_DEFAULTS, ...(init.params ?? {}) },
+            scanPath: undefined,
+            enabled: true,
+          };
+          updCurrent((m) => {
+            if (m.type !== 'facade') return m;
+            return { ...m, facadeFaces: [...(m.facadeFaces ?? []), face] };
+          });
+          return id;
+        },
+
+        updateFacadeFace: (faceId, patch) =>
+          updCurrent((m) => {
+            if (m.type !== 'facade') return m;
+            const faces = m.facadeFaces ?? [];
+            const next = {
+              ...m,
+              facadeFaces: faces.map((f) => (f.id === faceId ? { ...f, ...patch } : f)),
+            };
+            // corners 变化 → invalidate plane/scanPath，等 React 层重算；
+            // 其它字段（name/enabled）不动 plane/scanPath。
+            return 'corners' in patch ? invalidateFaceGeometry(next, faceId) : next;
+          }),
+
+        updateFacadeFaceParams: (faceId, patch) =>
+          updCurrent((m) => {
+            if (m.type !== 'facade') return m;
+            const faces = m.facadeFaces ?? [];
+            const next = {
+              ...m,
+              facadeFaces: faces.map((f) =>
+                f.id === faceId ? { ...f, params: { ...f.params, ...patch } } : f,
+              ),
+            };
+            // params 改动 → scanPath 失效（plane 仍可复用，因为 corners 没动）
+            return {
+              ...next,
+              facadeFaces: next.facadeFaces!.map((f) =>
+                f.id === faceId ? { ...f, scanPath: undefined } : f,
+              ),
+            };
+          }),
+
+        removeFacadeFace: (faceId) =>
+          updCurrent((m) => {
+            if (m.type !== 'facade') return m;
+            const faces = m.facadeFaces ?? [];
+            return { ...m, facadeFaces: faces.filter((f) => f.id !== faceId) };
+          }),
+
+        setFaceScanResult: (faceId, plane, scanPath) =>
+          updCurrent((m) => {
+            if (m.type !== 'facade') return m;
+            const faces = m.facadeFaces ?? [];
+            return {
+              ...m,
+              facadeFaces: faces.map((f) =>
+                f.id === faceId ? { ...f, plane, scanPath } : f,
+              ),
+            };
+          }),
       };
     },
     {
       name: 'dualgaze.missions',
-      version: 4,
+      version: 5,
       storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({
         missions: state.missions,

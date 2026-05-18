@@ -111,13 +111,26 @@ interface Segment {
 /**
  * 取 mission 实际飞行航点：
  *   - mapping → scanPath（多边形扫描算出来的）
+ *   - facade → 所有 enabled face.scanPath 拼接
  *   - patrol → waypoints
  *
  * Sim 全链路（buildSegments / DroneLayer / WaypointLayer reach 标记 / 视锥）
- * 都用这个 helper，mapping 跟 patrol 共用一套播放代码。
+ * 都用这个 helper，三种 mission 共用一套播放代码。
  */
 export function effectiveWaypoints(mission: Mission): Waypoint[] {
   if (mission.type === 'mapping') return mission.scanPath ?? [];
+  if (mission.type === 'facade') {
+    const faces = mission.facadeFaces ?? [];
+    const out: Waypoint[] = [];
+    let idx = 0;
+    for (const f of faces) {
+      if (!f.enabled) continue;
+      for (const wp of f.scanPath ?? []) {
+        out.push({ ...wp, index: idx++ });
+      }
+    }
+    return out;
+  }
   return mission.waypoints;
 }
 

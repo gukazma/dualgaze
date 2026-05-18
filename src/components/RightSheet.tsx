@@ -4,6 +4,8 @@ import { WaypointList } from './WaypointList';
 import { MissionConfigPanel } from './MissionConfigPanel';
 import { WaypointActionsPanel } from './WaypointActionsPanel';
 import { MappingScanList } from './MappingScanList';
+import { FacadeFaceList } from './FacadeFaceList';
+import { FacadeScanList } from './FacadeScanList';
 import { useCurrentMission } from '../store/missions';
 import { useUiStore } from '../store/ui';
 import { cn } from '../lib/utils';
@@ -16,17 +18,30 @@ export function RightSheet() {
   const tab = useUiStore((s) => s.rightSheetTab);
   const setTab = useUiStore((s) => s.setRightSheetTab);
   const isMapping = mission?.type === 'mapping';
+  const isFacade = mission?.type === 'facade';
 
-  // 切到 patrol 时如果当前 tab=scan 自动回退到 waypoints
-  // 切到 mapping 时如果当前 tab=actions（v2 不支持 mapping per-waypoint actions）自动回退
+  // 不同 mission type 下不合法的 tab 自动回退
   useEffect(() => {
-    if (!isMapping && tab === 'scan') setTab('waypoints');
-    if (isMapping && tab === 'actions') setTab('waypoints');
-  }, [isMapping, tab, setTab]);
+    if (isFacade) {
+      if (tab !== 'faces' && tab !== 'config' && tab !== 'scan') setTab('faces');
+      return;
+    }
+    if (isMapping) {
+      if (tab === 'actions' || tab === 'faces') setTab('waypoints');
+      return;
+    }
+    // patrol
+    if (tab === 'scan' || tab === 'faces') setTab('waypoints');
+  }, [isMapping, isFacade, tab, setTab]);
 
+  const facadeFaceCount = mission?.facadeFaces?.length ?? 0;
+  const facadeWaypointCount =
+    mission?.facadeFaces?.reduce((sum, f) => sum + (f.enabled ? (f.scanPath?.length ?? 0) : 0), 0) ?? 0;
   const headerCount = isMapping
     ? `${mission?.polygon?.length ?? 0} 顶点 · ${mission?.scanPath?.length ?? 0} 扫描点`
-    : `${mission?.waypoints.length ?? 0} 航点`;
+    : isFacade
+      ? `${facadeFaceCount} 面 · ${facadeWaypointCount} 航点`
+      : `${mission?.waypoints.length ?? 0} 航点`;
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -52,38 +67,67 @@ export function RightSheet() {
           <TabsList
             className={cn(
               'grid h-9 w-full gap-0 rounded-none border-b border-border-subtle bg-transparent p-0',
-              isMapping ? 'grid-cols-3' : 'grid-cols-3',
+              'grid-cols-3',
             )}
           >
-            <TabsTrigger value="waypoints" className={TAB_CLS}>
-              {isMapping ? '顶点' : '航点'}
-            </TabsTrigger>
-            <TabsTrigger value="config" className={TAB_CLS}>
-              任务配置
-            </TabsTrigger>
-            {!isMapping && (
-              <TabsTrigger value="actions" className={TAB_CLS}>
-                动作组
-              </TabsTrigger>
-            )}
-            {isMapping && (
-              <TabsTrigger value="scan" className={TAB_CLS}>
-                扫描列表
-              </TabsTrigger>
+            {isFacade ? (
+              <>
+                <TabsTrigger value="faces" className={TAB_CLS}>
+                  立面
+                </TabsTrigger>
+                <TabsTrigger value="config" className={TAB_CLS}>
+                  任务配置
+                </TabsTrigger>
+                <TabsTrigger value="scan" className={TAB_CLS}>
+                  扫描列表
+                </TabsTrigger>
+              </>
+            ) : (
+              <>
+                <TabsTrigger value="waypoints" className={TAB_CLS}>
+                  {isMapping ? '顶点' : '航点'}
+                </TabsTrigger>
+                <TabsTrigger value="config" className={TAB_CLS}>
+                  任务配置
+                </TabsTrigger>
+                {isMapping ? (
+                  <TabsTrigger value="scan" className={TAB_CLS}>
+                    扫描列表
+                  </TabsTrigger>
+                ) : (
+                  <TabsTrigger value="actions" className={TAB_CLS}>
+                    动作组
+                  </TabsTrigger>
+                )}
+              </>
             )}
           </TabsList>
-          <TabsContent value="waypoints" className="mt-0 flex-1 overflow-hidden">
-            <WaypointList />
-          </TabsContent>
+          {!isFacade && (
+            <TabsContent value="waypoints" className="mt-0 flex-1 overflow-hidden">
+              <WaypointList />
+            </TabsContent>
+          )}
+          {isFacade && (
+            <TabsContent value="faces" className="mt-0 flex-1 overflow-hidden">
+              <FacadeFaceList />
+            </TabsContent>
+          )}
           <TabsContent value="config" className="mt-0 flex-1 overflow-hidden">
             <MissionConfigPanel />
           </TabsContent>
-          <TabsContent value="actions" className="mt-0 flex-1 overflow-hidden">
-            <WaypointActionsPanel />
-          </TabsContent>
+          {!isMapping && !isFacade && (
+            <TabsContent value="actions" className="mt-0 flex-1 overflow-hidden">
+              <WaypointActionsPanel />
+            </TabsContent>
+          )}
           {isMapping && (
             <TabsContent value="scan" className="mt-0 flex-1 overflow-hidden">
               <MappingScanList />
+            </TabsContent>
+          )}
+          {isFacade && (
+            <TabsContent value="scan" className="mt-0 flex-1 overflow-hidden">
+              <FacadeScanList />
             </TabsContent>
           )}
         </Tabs>
@@ -95,4 +139,3 @@ export function RightSheet() {
     </div>
   );
 }
-

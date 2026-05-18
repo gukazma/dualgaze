@@ -6,6 +6,10 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# tsc 误 emit 的 .js 残渣（tsconfig 已加 noEmit:true，留兜底）
+src/**/*.js
+vite.config.js
+
 # Editor / OS
 .vscode/
 .idea/

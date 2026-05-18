@@ -11,6 +11,7 @@ import { importKmzToMission } from '../lib/kmz-import';
 import { effectiveWaypoints } from '../features/simulation/SimulationLoop';
 import { cn } from '../lib/utils';
 import { toast } from 'sonner';
+import { TilesetChip } from './TilesetChip';
 
 export function TopBar() {
   const mission = useCurrentMission();
@@ -104,10 +105,9 @@ export function TopBar() {
               {mission ? mission.name : '尚未选择任务'}
             </span>
             {mission && (
-              <span className="rounded-sm bg-[#2a2113] px-1.5 py-0.5 text-[9px] font-semibold text-accent">
-                巡逻航线
-              </span>
+              <MissionTypeChip type={mission.type} />
             )}
+            {mission?.type === 'facade' && <TilesetChip />}
           </div>
         </div>
       </div>
@@ -190,5 +190,34 @@ export function TopBar() {
         </Button>
       </div>
     </header>
+  );
+}
+
+function MissionTypeChip({ type }: { type: 'patrol' | 'mapping' | 'strip' | 'facade' }) {
+  if (type === 'mapping') {
+    return (
+      <span className="rounded-sm bg-[#0a2b22] px-1.5 py-0.5 text-[9px] font-semibold text-accent-cyan">
+        面状航线
+      </span>
+    );
+  }
+  if (type === 'facade') {
+    return (
+      <span className="rounded-sm bg-[#0a2b3c] px-1.5 py-0.5 text-[9px] font-semibold text-accent-cyan">
+        贴近航线
+      </span>
+    );
+  }
+  if (type === 'strip') {
+    return (
+      <span className="rounded-sm bg-[#2a2113] px-1.5 py-0.5 text-[9px] font-semibold text-text-muted">
+        带状航线
+      </span>
+    );
+  }
+  return (
+    <span className="rounded-sm bg-[#2a2113] px-1.5 py-0.5 text-[9px] font-semibold text-accent">
+      巡逻航线
+    </span>
   );
 }

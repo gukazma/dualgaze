@@ -1,8 +1,14 @@
 import { create } from 'zustand';
 
-export type RightSheetTab = 'waypoints' | 'config' | 'actions' | 'scan';
+export type RightSheetTab = 'waypoints' | 'config' | 'actions' | 'scan' | 'faces';
 export type LibrarySort = 'updated_desc' | 'updated_asc' | 'name';
 export type MapView = '3d' | '2d';
+/**
+ * 当前主场景的拾取交互模式：
+ *  - 'idle': 默认（WaypointPicker / PolygonPicker 由各自的 layer 自行接管）
+ *  - 'facade-draw': facade mission 内点 "新建立面" 进入 4 角拾取
+ */
+export type PickerMode = 'idle' | 'facade-draw';
 
 interface UiState {
   createModalOpen: boolean;
@@ -14,6 +20,8 @@ interface UiState {
   librarySort: LibrarySort;
   /** 主场景视图模式：3d 自由旋转 / 2d 锁定俯视（仅 pan + zoom） */
   mapView: MapView;
+  /** facade 拾取交互模式 */
+  pickerMode: PickerMode;
 
   openCreateModal: () => void;
   closeCreateModal: () => void;
@@ -22,6 +30,7 @@ interface UiState {
   setLibraryFilterDrone: (id: string | null) => void;
   setLibrarySort: (s: LibrarySort) => void;
   setMapView: (v: MapView) => void;
+  setPickerMode: (m: PickerMode) => void;
 }
 
 export const useUiStore = create<UiState>((set) => ({
@@ -31,6 +40,7 @@ export const useUiStore = create<UiState>((set) => ({
   libraryFilterDrone: null,
   librarySort: 'updated_desc',
   mapView: '3d',
+  pickerMode: 'idle',
 
   openCreateModal: () => set({ createModalOpen: true }),
   closeCreateModal: () => set({ createModalOpen: false }),
@@ -39,4 +49,5 @@ export const useUiStore = create<UiState>((set) => ({
   setLibraryFilterDrone: (id) => set({ libraryFilterDrone: id }),
   setLibrarySort: (s) => set({ librarySort: s }),
   setMapView: (v) => set({ mapView: v }),
+  setPickerMode: (m) => set({ pickerMode: m }),
 }));
