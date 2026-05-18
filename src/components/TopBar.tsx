@@ -16,6 +16,8 @@ import { TilesetChip } from './TilesetChip';
 export function TopBar() {
   const mission = useCurrentMission();
   const openCreateModal = useUiStore((s) => s.openCreateModal);
+  const setPickerMode = useUiStore((s) => s.setPickerMode);
+  const commitFacadePreviewIfAny = useMissionsStore((s) => s.commitFacadePreviewIfAny);
   const mode = useSimulationStore((s) => s.mode);
   const enterSim = useSimulationStore((s) => s.enterSim);
   const exitSim = useSimulationStore((s) => s.exitSim);
@@ -33,6 +35,10 @@ export function TopBar() {
       exitSim();
       return;
     }
+    // facade mission：进 sim 前先把 picker preview 落地（避免 picker 卸载丢 preview），
+    // 然后退出 picker 模式（避免 keyboard listener 与 sim 状态机冲突）
+    commitFacadePreviewIfAny();
+    setPickerMode('idle');
     const prep = prepareSimulation();
     if (prep.startState && prep.totalDurationMs > 0) {
       enterSim(prep.totalDurationMs, prep.startState);

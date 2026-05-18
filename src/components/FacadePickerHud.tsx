@@ -101,9 +101,15 @@ export function FacadePickerHud() {
 
         <button
           type="button"
-          onClick={() => setPickerMode('idle')}
+          onClick={() => {
+            if (isPreview) {
+              const ok = window.confirm('当前有未保存的立面 preview，确认丢弃？');
+              if (!ok) return;
+            }
+            setPickerMode('idle');
+          }}
           className="ml-1 rounded p-0.5 text-text-muted hover:bg-bg-input hover:text-text-primary"
-          title="退出立面拾取"
+          title="退出立面拾取（preview 状态会丢弃）"
         >
           <X className="h-3.5 w-3.5" />
         </button>

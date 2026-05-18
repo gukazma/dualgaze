@@ -20,6 +20,7 @@ import {
   type WaypointActionType,
 } from '../types/mission';
 import { generateScanPath } from '../lib/mapping-scan';
+import { useFacadePickerStore } from './facade-picker';
 
 interface MissionsState {
   missions: Mission[];
@@ -84,6 +85,15 @@ interface MissionsState {
    * 因为 store 拿不到 viewer，所以算法在 React 层跑；store 这里只负责落地。
    */
   setFaceScanResult: (faceId: string, plane: FacadePlane | undefined, scanPath: Waypoint[] | undefined) => void;
+  /**
+   * 把 facade-picker store 当前的 preview 状态 commit 成一个新 face。
+   * 如果当前不是 preview 状态（drawing/error），不动；返回 false。
+   *
+   * 由外部按钮（FacadeFaceList 完成 / TopBar 进 sim）调，确保 preview 不被 picker
+   * 卸载时悄悄丢弃。逻辑与 FacadePicker.commit() 重复，但 picker 是 vanilla class，
+   * 外部拿不到实例，所以重新走 store API 实现。
+   */
+  commitFacadePreviewIfAny: () => boolean;
 }
 
 const reindex = (waypoints: Waypoint[]): Waypoint[] =>
@@ -384,6 +394,23 @@ export const useMissionsStore = create<MissionsState>()(
               ),
             };
           }),
+
+        commitFacadePreviewIfAny: () => {
+          const pickerState = useFacadePickerStore.getState().state;
+          if (pickerState.mode !== 'preview') return false;
+          const state = get();
+          const mission = state.missions.find((m) => m.id === state.currentMissionId);
+          if (!mission || mission.type !== 'facade') return false;
+          const idx = (mission.facadeFaces?.length ?? 0) + 1;
+          const id = state.addFacadeFace({
+            name: `立面 ${idx}`,
+            corners: pickerState.corners,
+          });
+          if (!id) return false;
+          state.setFaceScanResult(id, pickerState.plane, pickerState.scanPath);
+          useFacadePickerStore.getState().setState({ mode: 'drawing', corners: [] });
+          return true;
+        },
       };
     },
     {

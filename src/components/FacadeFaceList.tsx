@@ -28,11 +28,14 @@ export function FacadeFaceList() {
   const faces = mission.facadeFaces ?? [];
   const hasTileset = !!mission.tilesetSource;
 
+  const commitFacadePreviewIfAny = useMissionsStore((s) => s.commitFacadePreviewIfAny);
   const startNew = (): void => {
     if (!hasTileset) return;
     setPickerMode('facade-draw');
   };
   const finishPicker = (): void => {
+    // 若当前 picker 在 preview 状态，先保存 preview 再退出；否则直接退出
+    commitFacadePreviewIfAny();
     setPickerMode('idle');
   };
 
