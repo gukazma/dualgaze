@@ -27,6 +27,7 @@ import { RightSheet } from './components/RightSheet';
 import { PlaybackBar } from './components/PlaybackBar';
 import { FpvWindow } from './components/FpvWindow';
 import { ViewToggle } from './components/ViewToggle';
+import { LocationSearchTab } from './components/LocationSearchTab';
 import { Toaster } from './components/ui/sonner';
 import { useMapViewSync } from './features/cesium/useMapViewSync';
 import { useCurrentMission } from './store/missions';
@@ -81,6 +82,7 @@ export function App() {
           {!isSimulating && showQuickAdd && <FacadeQuickAddButton />}
           {!isSimulating && isFacade && <FacadeSafetyBadge />}
           {!isSimulating && <ViewToggle />}
+          {!isSimulating && <LocationSearchTab />}
           {isSimulating && <FpvWindow />}
         </div>
 
